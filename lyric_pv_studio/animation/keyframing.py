@@ -2,10 +2,25 @@
 
 import math
 
-from ..core.layout import _random_amount
+from ..core.layout import get_random_amount
 
 
-def _key_object_scale(obj, frame_in, frame_out, fade, pop_enabled):
+def smooth_action_fcurves(obj, interpolation="BEZIER", handle_type="AUTO_CLAMPED"):
+    """将物体当前动画动作的所有关键帧曲线统一设置为指定插值与手柄类型，防止过冲。"""
+    action = getattr(getattr(obj, "animation_data", None), "action", None)
+    if not action:
+        return
+    try:
+        for fc in action.fcurves:
+            for key in fc.keyframe_points:
+                key.interpolation = interpolation
+                key.handle_left_type = handle_type
+                key.handle_right_type = handle_type
+    except (AttributeError, TypeError):
+        pass
+
+
+def key_object_scale(obj, frame_in, frame_out, fade, pop_enabled):
     """Insert Bezier scale keyframes for pop-in and fade-out."""
     base = obj.scale.copy()
     hidden = base * 0.001
@@ -21,22 +36,13 @@ def _key_object_scale(obj, frame_in, frame_out, fade, pop_enabled):
     else:
         obj.scale = base
         obj.keyframe_insert(data_path="scale", frame=frame_out)
-    action = obj.animation_data.action if obj.animation_data else None
-    if action:
-        try:
-            for fc in action.fcurves:
-                for key in fc.keyframe_points:
-                    key.interpolation = "BEZIER"
-                    key.handle_left_type = "AUTO_CLAMPED"
-                    key.handle_right_type = "AUTO_CLAMPED"
-        except (AttributeError, TypeError):
-            pass
+    smooth_action_fcurves(obj)
 
 
 def apply_text_animation(obj, record, frame_in, frame_out, props, rng):
     """Apply motion and rotation keyframes based on the selected animation scheme."""
     mode = record.get("animation", "SLIDE")
-    strength = max(0.0, min(1.0, float(props.animation_intensity) / 100.0)) * _random_amount(props)
+    strength = max(0.0, min(1.0, float(props.animation_intensity) / 100.0)) * get_random_amount(props)
     base_scale = obj.scale.copy()
     base_rotation = obj.rotation_euler.copy()
     reveal = max(2, min(12, int((frame_out - frame_in) * 0.12)))
@@ -57,14 +63,4 @@ def apply_text_animation(obj, record, frame_in, frame_out, props, rng):
         obj.keyframe_insert(data_path="rotation_euler", frame=mid)
         obj.rotation_euler = base_rotation
         obj.keyframe_insert(data_path="rotation_euler", frame=frame_out)
-    # ELECTRIC 已移除：不再每句复制材质做发光脉冲
-    action = obj.animation_data.action if obj.animation_data else None
-    if action:
-        try:
-            for fc in action.fcurves:
-                for key in fc.keyframe_points:
-                    key.interpolation = "BEZIER"
-                    key.handle_left_type = "AUTO_CLAMPED"
-                    key.handle_right_type = "AUTO_CLAMPED"
-        except (AttributeError, TypeError):
-            pass
+    smooth_action_fcurves(obj)

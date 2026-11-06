@@ -148,7 +148,8 @@ def lyric_display_units(text):
             continue
         # Apostrophes at the start of a contraction fragment (e.g. 'n')
         # belong to the following Latin letters; internal apostrophes stay joined.
-        if ch.isascii() and (ch.isalnum() or (ch in "'’" and i + 1 < len(text) and text[i + 1].isascii() and text[i + 1].isalnum())):
+        if ch.isascii() and (
+                ch.isalnum() or (ch in "'’" and i + 1 < len(text) and text[i + 1].isascii() and text[i + 1].isalnum())):
             j = i + 1
             while j < len(text):
                 nxt = text[j]

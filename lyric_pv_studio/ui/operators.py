@@ -3,10 +3,11 @@
 import json
 import math
 import random
+
 import bpy
 from bpy.types import Operator
 
-from ..animation.keyframing import _key_object_scale, apply_text_animation
+from ..animation.keyframing import apply_text_animation, key_object_scale
 from ..animation.runtime import invalidate_entrance_cache, update_lyric_entrance_positions
 from ..blender.collections import (
     get_or_create_collection,
@@ -305,7 +306,7 @@ class LYRICPV_OT_generate(Operator):
                     ob["lyric_pop_y"] = -base_size * 0.22 if pop_motion else 0.0
                     ob["lyric_pop_z"] = props.spatial_depth if pop_motion else 0.0
                     char_start = int(ob["lyric_frame_in"])
-                    _key_object_scale(ob, char_start, frame_out, fade, reveal_enabled)
+                    key_object_scale(ob, char_start, frame_out, fade, reveal_enabled)
                     apply_text_animation(ob, record, char_start, frame_out, props, random.Random(int(props.random_seed) + index * 997 + ci))
                     created += 1
                 group_center_x = float(record["x"])
@@ -383,7 +384,7 @@ class LYRICPV_OT_generate(Operator):
                 ob["lyric_pop_frames"] = max(2, fade)
                 ob["lyric_pop_y"] = -base_size * 0.22 if pop_motion else 0.0
                 ob["lyric_pop_z"] = props.spatial_depth if pop_motion else 0.0
-                _key_object_scale(ob, frame_in, frame_out, fade, reveal_enabled)
+                key_object_scale(ob, frame_in, frame_out, fade, reveal_enabled)
                 line_rng = random.Random(int(props.random_seed) + index * 997)
                 apply_text_animation(ob, record, frame_in, frame_out, props, line_rng)
                 created += 1

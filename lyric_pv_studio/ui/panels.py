@@ -1,6 +1,7 @@
 """Sidebar Panel in 3D Viewport for LYRIC PV STUDIO."""
 
 import json
+
 from bpy.types import Panel
 
 

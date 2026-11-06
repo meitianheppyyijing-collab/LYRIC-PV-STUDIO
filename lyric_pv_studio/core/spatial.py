@@ -150,7 +150,8 @@ def nudge_lyric_away_from_character(scene, camera, props, x, y, width, height, d
     return best[2], best[3]
 
 
-def fit_lyric_object_to_camera(obj, frame_width, frame_height, safe_width=0.84, safe_height=0.76, max_animation_scale=1.22):
+def fit_lyric_object_to_camera(obj, frame_width, frame_height, safe_width=0.84, safe_height=0.76,
+                               max_animation_scale=1.22):
     """Scale and clamp lyric object to stay comfortably within camera bounds."""
     bpy.context.view_layer.update()
     dims = obj.dimensions

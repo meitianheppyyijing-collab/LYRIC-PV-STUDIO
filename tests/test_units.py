@@ -6,7 +6,7 @@ import unittest
 from lyric_pv_studio.core.layout import (
     _choose_animation,
     _new_layout_record,
-    _random_amount,
+    get_random_amount,
     _split_sections,
     _weighted_choice,
 )
@@ -69,6 +69,42 @@ class TestLayout(unittest.TestCase):
         self.assertIn("animation", rec)
         self.assertIn("entrance", rec)
         self.assertFalse(rec["locked"])
+
+
+class TestAnimation(unittest.TestCase):
+    def test_smooth_action_fcurves_mock(self):
+        from lyric_pv_studio.animation.keyframing import smooth_action_fcurves
+
+        # Non-animated object
+        class DummyEmpty:
+            animation_data = None
+
+        smooth_action_fcurves(DummyEmpty())
+
+        # Mock object with action and fcurves
+        class KeyPoint:
+            interpolation = "LINEAR"
+            handle_left_type = "FREE"
+            handle_right_type = "FREE"
+
+        class FCurve:
+            keyframe_points = [KeyPoint(), KeyPoint()]
+
+        class Action:
+            fcurves = [FCurve()]
+
+        class AnimData:
+            action = Action()
+
+        class DummyObj:
+            animation_data = AnimData()
+
+        obj = DummyObj()
+        smooth_action_fcurves(obj)
+        for kp in obj.animation_data.action.fcurves[0].keyframe_points:
+            self.assertEqual(kp.interpolation, "BEZIER")
+            self.assertEqual(kp.handle_left_type, "AUTO_CLAMPED")
+            self.assertEqual(kp.handle_right_type, "AUTO_CLAMPED")
 
 
 if __name__ == "__main__":

@@ -23,9 +23,9 @@ def _build_entrance_index(scene, collection, cache_key, current_frame):
     for obj in collection.all_objects:
         try:
             if not (
-                obj.get(PV_TAG, False)
-                and obj.type == "FONT"
-                and obj.get("lyric_entrance_enabled", False)
+                    obj.get(PV_TAG, False)
+                    and obj.type == "FONT"
+                    and obj.get("lyric_entrance_enabled", False)
             ):
                 continue
             frame_in = int(float(obj.get("lyric_frame_in", 1.0)))

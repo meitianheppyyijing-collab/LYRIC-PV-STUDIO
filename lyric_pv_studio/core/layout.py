@@ -23,7 +23,7 @@ def _weighted_choice(rng, items, weights, amount=1.0):
 
 def _choose_animation(rng, props):
     mode = props.animation_random_mode
-    amount = _random_amount(props)
+    amount = get_random_amount(props)
     pools = {
         "GENTLE": (("FADE", "SLIDE", "FLOAT", "ROTATE"), (1.35, 1.25, 0.8, 0.65)),
         "IMPACT": (("POP", "BOUNCE", "GLITCH", "SLIDE"), (1.15, 0.9, 0.45, 1.3)),
@@ -34,13 +34,17 @@ def _choose_animation(rng, props):
     return _weighted_choice(rng, pool, weights, amount)
 
 
-def _random_amount(props):
+def get_random_amount(props):
     """0 = 完全稳定，100 = 最大随机偏移。"""
     return 1.0 if props is None else max(0.0, min(1.0, props.random_amount / 100.0))
 
 
+# 向下兼容历史别名
+_random_amount = get_random_amount
+
+
 def _new_layout_record(rng, props=None):
-    amount = _random_amount(props)
+    amount = get_random_amount(props)
     animation = _choose_animation(rng, props) if props and props.animation_random_enabled else "SLIDE"
     style_pool = (
         "CLEAN_CENTER",
@@ -144,7 +148,7 @@ def load_layout_records(scene, entries, props):
                 })
             elif props.layout_pool != "ALL":
                 record["style"] = _weighted_choice(
-                    rng, styles, (1.45, 1.2, 1.2, 0.9), _random_amount(props)
+                    rng, styles, (1.45, 1.2, 1.2, 0.9), get_random_amount(props)
                 )
             record["animation_v050"] = True
             result[key] = record
@@ -179,7 +183,7 @@ def reroll_layout_records(scene, props, indices=None):
             })
         elif props.layout_pool != "ALL":
             new["style"] = _weighted_choice(
-                rng, LAYOUT_STYLES[:4], (1.45, 1.2, 1.2, 0.9), _random_amount(props)
+                rng, LAYOUT_STYLES[:4], (1.45, 1.2, 1.2, 0.9), get_random_amount(props)
             )
         records[key] = new
     scene["lyric_pv_reroll"] = int(scene.get("lyric_pv_reroll", 0)) + 1
