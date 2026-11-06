@@ -1,50 +1,116 @@
 # LYRIC PV STUDIO
 
-A Blender add-on for creating animated lyric PVs from LRC/YRC lyric files, featuring automatic typography layout, camera occlusion avoidance, and spatial motion animations.
+[English](README_EN.md) | [简体中文](README.md)
 
-- **Blender:** 5.2 or newer (targets Blender 5.2)
-- **Author / project attribution:** 静意
-- **License:** GPL-3.0-or-later
+**LYRIC PV STUDIO** 是一个专为 Blender 打造的歌词 PV 动画与排版制作插件。支持从标准 LRC（普通歌词）和 YRC（逐字时间歌词）快速生成 3D 动态字幕排版、镜头空间入场动画以及人物遮挡智能避让。
 
-## Project Structure
+- **兼容版本：** Blender 5.2 或更高版本
+- **作者 / 项目归属：** 静意
+- **开源协议：** GPL-3.0-or-later
 
-The add-on is organized as a clean, modular Python package located in [`lyric_pv_studio/`](./lyric_pv_studio):
+---
+
+## ✨ 核心特性
+
+- **多格式歌词支持**
+  - **LRC 格式**：支持带有时间戳的普通歌词，自动识别并应用全局 `[offset:+-ms]` 偏移。
+  - **YRC 格式**：支持保留字级时间信息的网易云风格逐字歌词，实现极其精准的逐字显现与动作同步。
+  - **编码自适应**：自动尝试 `UTF-8-SIG` 与 `GB18030` 编码，杜绝中文歌词乱码。
+
+- **多样化排版与随机引擎**
+  - 内置多种视觉排版预设：整句居中、左/右标题、竖排书法、对角倾斜、宽字间距、首字大字强调、单字散布等。
+  - 排版模式支持：**逐句随机**、**按音乐段落统一**、**固定对齐**。
+  - **随机幅度与种子控制**：支持通过随机种子完美复现排版，支持单句“锁定”以保护满意排版，并支持“重抽未锁定”与“只重抽此句”。
+
+- **镜头安全框与智能避让**
+  - **视锥边界自适应**：根据歌词在镜头深度平面自动计算可视边界，自适应文字缩放，防止文字穿出画面。
+  - **人物遮挡避让**：通过吸管拾取人物网格或骨架，自动计算人物在摄像机画面的遮挡投影包围盒；文字将智能推至人物后方或向安全空白区域位移避让。
+
+- **丰富的空间与动效方案**
+  - 支持滑入、弹入（Pop）、淡入淡出、旋转、弹跳、悬浮与故障错位闪切（Glitch RGB Overlay）。
+  - 基于 Blender 帧变化事件做实时平滑缓动计算，播放与渲染顺畅，不产生卡顿。
+
+---
+
+## 📦 项目模块结构
+
+项目采用高内聚、低耦合的标准模块化包架构（位于 [`lyric_pv_studio/`](./lyric_pv_studio)）：
 
 ```text
 lyric_pv_studio/
-├── __init__.py          # Add-on metadata (bl_info) & lifecycle registration
-├── constants.py         # Global tags, collections, and styling presets
-├── core/                # Parsing, typography advance, layout planning & spatial math
-├── animation/           # Scale/motion keyframing & real-time frame handlers
-├── blender/             # Collection hierarchy, object cleanup & materials
-└── ui/                  # Properties, operators, callbacks & 3D view sidebar panels
+├── __init__.py          # 插件入口、元数据 (bl_info) 与生命周期注册
+├── constants.py         # 全局标签、集合名称、样式预设常量
+├── core/                # 核心纯算法库（无 UI 强依赖，易测试）
+│   ├── parser.py        # LRC / YRC 文本解析与排版单元拆分
+│   ├── layout.py        # 随机排版策略、段落划分与参数持久化
+│   └── spatial.py       # 摄像机投影边界、人物遮挡分析与避让算法
+├── animation/           # 动画控制
+│   ├── keyframing.py    # 缩放、旋转等 F-Curve 关键帧烘焙
+│   └── runtime.py       # 逐帧贝塞尔缓动计算与事件缓存索引
+├── blender/             # Blender 数据管理
+│   ├── collections.py   # 生成物体集合树管理与孤立数据安全清理
+│   └── materials.py     # 发光与故障错位材质生成
+└── ui/                  # 用户界面与交互
+    ├── callbacks.py     # 实时参数调节回调
+    ├── properties.py    # 插件属性组 (PropertyGroup)
+    ├── operators.py     # 导入、生成、重抽、锁定与清理算子
+    └── panels.py        # 3D 视图侧边栏面板 (歌词PV)
 ```
 
-## Installation
+---
 
-### From Releases (.zip)
+## 🚀 安装指南
 
-1. Download the latest release package `lyric_pv_studio_vx.x.x.zip` from the [Releases](https://github.com/SOR2171/LYRIC-PV-STUDIO/releases) page.
-2. In Blender, open **Edit → Preferences → Add-ons**.
-3. Click the dropdown in the top-right and choose **Install from Disk…**.
-4. Select the downloaded `.zip` file.
-5. Enable **LYRIC PV STUDIO** in the add-ons list.
-6. In the 3D Viewport, press `N` to open the sidebar and switch to the **歌词PV / Lyric PV** tab.
+### 方式一：从 Releases 下载（推荐）
 
-### From Source
+1. 前往 GitHub 项目的 [Releases](https://github.com/SOR2171/LYRIC-PV-STUDIO/releases) 页面。
+2. 下载最新发布的 `lyric_pv_studio_vx.x.x.zip` 压缩包。
+3. 打开 Blender，进入菜单 **编辑 (Edit) → 偏好设置 (Preferences) → 插件 (Add-ons)**。
+4. 点击右上角下拉菜单，选择 **从磁盘安装... (Install from Disk...)**。
+5. 选择下载好的 `.zip` 文件并安装。
+6. 在插件列表中勾选启用 **LYRIC PV STUDIO**。
+7. 在 3D 视图中按快捷键 `N` 打开侧边栏，即可在 **歌词PV** 选项卡中使用插件。
 
-Clone the repository and zip the `lyric_pv_studio` directory into a `.zip` file (or symlink `lyric_pv_studio` into your Blender addons directory).
+### 方式二：从源码安装
 
-## Usage
+1. 克隆本仓库到本地。
+2. 将 `lyric_pv_studio` 文件夹打包成一个 zip 压缩包，或者直接软链接到 Blender 的 `scripts/addons/` 目录下即可。
 
-1. Prepare an `.lrc` or `.yrc` lyric file with timestamps.
-2. Open the **歌词PV** sidebar panel in Blender.
-3. Import your lyric file using the **导入 LRC** or **导入 YRC** button.
-4. Adjust typography, alignment, camera, and animation settings as needed.
-5. Click **生成歌词排版与动画** to generate the lyric objects and animations in your scene.
+---
 
-For detailed setup notes, see [the installation guide](docs/installation.md) and [user guide](docs/user_guide.md).
+## 📖 快速上手
 
-## License
+1. **导入歌词**：准备好 `.lrc` 或 `.yrc` 文件，在插件面板中选择文件并点击对应导入按钮。
+2. **选择摄像机**：默认使用当前场景激活摄像机，也可指定特定摄像机。
+3. **设置外观与排版**：
+   - 调整字体大小、字体文件（支持 `.ttf` / `.otf`）。
+   - 开启/关闭“随机歌词排版”，调整“随机幅度”和排版模式。
+4. **生成动画**：
+   - 点击 **生成歌词排版与动画**，插件将自动在摄像机视锥内建立层级与动画。
+5. **微调与重抽**：
+   - 对满意的句子可输入行号点击 **锁定/解锁此句**。
+   - 对不满意的内容点击 **重抽未锁定** 或 **只重抽此句** 重新生成。
+6. **重置项目**：
+   - 点击 **彻底清理歌词项目** 可一键移除所有插件生成的对象与材质，恢复干净场景。
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+更多细节说明可参阅 [安装说明文档](docs/installation.md) 与 [用户指南](docs/user_guide.md)。
+
+---
+
+## 🛠️ 本地开发与测试
+
+本项目自带语法与算法单元测试，无需打开 Blender 即可直接在终端运行纯逻辑测试：
+
+```bash
+# 静态语法检查（遍历所有模块）
+python tests/static_check.py
+
+# 纯算法单元测试（LRC/YRC 解析、步进估算、排版拆分）
+python -m unittest tests/test_units.py
+```
+
+---
+
+## 📄 开源许可
+
+本项目遵循 [GPL-3.0-or-later](LICENSE) 开源协议。
