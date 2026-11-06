@@ -4,7 +4,7 @@
 
 A Blender add-on for creating animated lyric PVs from LRC/YRC lyric files, featuring automatic typography layout, camera occlusion avoidance, and spatial motion animations.
 
-- **Blender:** 5.2 or newer (targets Blender 5.2)
+- **Blender:** 5.2 or newer (targets Blender 5.2 LTS)
 - **Author / project attribution:** 静意
 - **License:** GPL-3.0-or-later
 
