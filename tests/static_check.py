@@ -9,18 +9,13 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PKG_DIR = REPO_ROOT / "lyric_pv_studio"
-DEFAULT_SOURCE = REPO_ROOT / "LYRIC_PV_STUDIO_v0_5_15_LRC_spacing_fix.py"
 
 target = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
 
 if target:
     files = list(target.rglob("*.py")) if target.is_dir() else [target]
 else:
-    files = []
-    if PKG_DIR.is_dir():
-        files.extend(PKG_DIR.rglob("*.py"))
-    if DEFAULT_SOURCE.is_file():
-        files.append(DEFAULT_SOURCE)
+    files = list(PKG_DIR.rglob("*.py")) if PKG_DIR.is_dir() else []
 
 if not files:
     raise SystemExit("No Python files found to check.")

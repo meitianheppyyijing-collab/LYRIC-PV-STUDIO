@@ -1,35 +1,49 @@
 # LYRIC PV STUDIO
 
-A Blender add-on for creating animated lyric PVs from LRC lyric files.
+A Blender add-on for creating animated lyric PVs from LRC/YRC lyric files, featuring automatic typography layout, camera occlusion avoidance, and spatial motion animations.
 
-- **Version:** 0.5.15
-- **Blender:** 5.2 or newer (the add-on metadata targets Blender 5.2)
+- **Blender:** 5.2 or newer (targets Blender 5.2)
 - **Author / project attribution:** 静意
 - **License:** GPL-3.0-or-later
 
-## Source
+## Project Structure
 
-The add-on is provided as a single Python file: [`LYRIC_PV_STUDIO_v0_5_15_LRC_spacing_fix.py`](./LYRIC_PV_STUDIO_v0_5_15_LRC_spacing_fix.py).
+The add-on is organized as a clean, modular Python package located in [`lyric_pv_studio/`](./lyric_pv_studio):
 
-This is the user's supplied v0.5.15 LRC spacing-fix source. The source file is published without editing.
+```text
+lyric_pv_studio/
+├── __init__.py          # Add-on metadata (bl_info) & lifecycle registration
+├── constants.py         # Global tags, collections, and styling presets
+├── core/                # Parsing, typography advance, layout planning & spatial math
+├── animation/           # Scale/motion keyframing & real-time frame handlers
+├── blender/             # Collection hierarchy, object cleanup & materials
+└── ui/                  # Properties, operators, callbacks & 3D view sidebar panels
+```
 
 ## Installation
 
-1. Download the `.py` file from this repository.
-2. In Blender, open **Edit → Preferences → Add-ons**.
-3. Choose **Install from Disk…** and select the downloaded `.py` file.
-4. Enable **LYRIC PV STUDIO** in the add-ons list.
-5. Open the 3D View sidebar and locate the **Lyric PV** panel.
+### From Releases (.zip)
 
-If the add-on does not appear, check the Blender system console for registration or Python errors and confirm that the installed file is the v0.5.15 source above.
+1. Download the latest release package `lyric_pv_studio_vx.x.x.zip` from the [Releases](https://github.com/SOR2171/LYRIC-PV-STUDIO/releases) page.
+2. In Blender, open **Edit → Preferences → Add-ons**.
+3. Click the dropdown in the top-right and choose **Install from Disk…**.
+4. Select the downloaded `.zip` file.
+5. Enable **LYRIC PV STUDIO** in the add-ons list.
+6. In the 3D Viewport, press `N` to open the sidebar and switch to the **歌词PV / Lyric PV** tab.
+
+### From Source
+
+Clone the repository and zip the `lyric_pv_studio` directory into a `.zip` file (or symlink `lyric_pv_studio` into your Blender addons directory).
 
 ## Usage
 
-Prepare an LRC lyric file with timestamps, install and enable the add-on, then use its Lyric PV panel to import and generate lyric content. Exact controls and supported options are defined by the add-on UI and source code; consult [the installation notes](docs/installation.md) and [user guide](docs/user_guide.md).
+1. Prepare an `.lrc` or `.yrc` lyric file with timestamps.
+2. Open the **歌词PV** sidebar panel in Blender.
+3. Import your lyric file using the **导入 LRC** or **导入 YRC** button.
+4. Adjust typography, alignment, camera, and animation settings as needed.
+5. Click **生成歌词排版与动画** to generate the lyric objects and animations in your scene.
 
-## Versioning
-
-Version history is recorded in [CHANGELOG.md](CHANGELOG.md). Published source snapshots should remain intact; use a new versioned file and Git tag for future releases.
+For detailed setup notes, see [the installation guide](docs/installation.md) and [user guide](docs/user_guide.md).
 
 ## License
 
