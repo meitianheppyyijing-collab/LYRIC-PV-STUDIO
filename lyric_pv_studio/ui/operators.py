@@ -191,6 +191,21 @@ class LYRICPV_OT_generate(Operator):
                 record = dict(record)
                 record["x"] = 0.0
                 record["rotation"] = 0.0
+            # PV-style placement: each lyric line gets a deterministic, varied
+            # camera-local position. Keep a generous safe margin; final text-fit
+            # and character-occlusion checks below still clamp/nudge the result.
+            # This applies identically to LRC and YRC because both use this generator.
+            if props.random_layout_enabled:
+                record = dict(record)
+                pos_rng = random.Random(int(props.random_seed) + index * 104729 + 31)
+                # Avoid repeatedly pinning every line to the exact screen centre.
+                x_choices = (-0.34, -0.22, 0.22, 0.34)
+                y_choices = (-0.27, -0.16, 0.16, 0.27)
+                record["x"] = pos_rng.choice(x_choices) * frame_width
+                record["y"] = pos_rng.choice(y_choices) * frame_height
+                # Small per-line variation makes consecutive lines feel less templated.
+                record["x"] += pos_rng.uniform(-0.035, 0.035) * frame_width
+                record["y"] += pos_rng.uniform(-0.025, 0.025) * frame_height
             # 副歌/段落位置交替（可选）：position_cycle > 0 时每 N 句上下交替
             cycle = int(props.position_cycle)
             extra_y = 0.0
