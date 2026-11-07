@@ -1,0 +1,35 @@
+name: Release Add-on
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release Add-on Zip
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Package add-on into zip
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          ZIP_NAME="lyric_pv_studio_${TAG_NAME}.zip"
+          echo "Packaging ${ZIP_NAME}..."
+          zip -r "${ZIP_NAME}" lyric_pv_studio -x "*/__pycache__/*" "*.pyc" "*.pyo"
+          echo "RELEASE_ZIP=${ZIP_NAME}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          files: ${{ env.RELEASE_ZIP }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
