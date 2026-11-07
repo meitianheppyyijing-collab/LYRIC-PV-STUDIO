@@ -9,6 +9,7 @@ from bpy.types import Operator
 
 from ..animation.keyframing import apply_text_animation, key_glyph_reveal, key_object_scale
 from ..animation.runtime import invalidate_entrance_cache, update_lyric_entrance_positions
+from .callbacks import update_lyric_positions
 from ..blender.collections import (
     get_or_create_collection,
     remove_generated_collection,
@@ -175,6 +176,7 @@ class LYRICPV_OT_generate(Operator):
             controller.hide_set(True, view_layer=context.view_layer)
 
         created = 0
+        content_bounds = [float('inf'), float('-inf'), float('inf'), float('-inf')]
         for index, (seconds, lyric) in enumerate(entries):
             if not lyric.strip():
                 continue
@@ -333,6 +335,15 @@ class LYRICPV_OT_generate(Operator):
                 group_center_x -= min_x + frame_width * 0.5
                 group_y -= min_y + frame_height * 0.5
                 sentence_group.location = (group_center_x, group_y, 0.0)
+                bound_w = total_width * fit
+                bound_h = base_size * fit * 1.25
+                angle = math.radians(float(record["rotation"]))
+                rotated_w = abs(bound_w * math.cos(angle)) + abs(bound_h * math.sin(angle))
+                rotated_h = abs(bound_w * math.sin(angle)) + abs(bound_h * math.cos(angle))
+                content_bounds[0] = min(content_bounds[0], group_center_x - rotated_w * 0.5)
+                content_bounds[1] = max(content_bounds[1], group_center_x + rotated_w * 0.5)
+                content_bounds[2] = min(content_bounds[2], group_y - rotated_h * 0.5)
+                content_bounds[3] = max(content_bounds[3], group_y + rotated_h * 0.5)
                 sentence_group["lyric_base_x"] = float(group_center_x)
                 sentence_group["lyric_base_y"] = float(group_y)
                 sentence_group["lyric_base_z"] = 0.0
@@ -394,6 +405,12 @@ class LYRICPV_OT_generate(Operator):
                 ob.location.x = abs_x - (min_x + frame_width * 0.5)
                 ob.location.y = abs_y - (min_y + frame_height * 0.5)
                 ob["lyric_base_x"] = float(ob.location.x)
+                half_w = max(float(ob.dimensions.x), base_size * 0.12) * 0.5
+                half_h = max(float(ob.dimensions.y), base_size * 0.12) * 0.5
+                content_bounds[0] = min(content_bounds[0], float(ob.location.x) - half_w)
+                content_bounds[1] = max(content_bounds[1], float(ob.location.x) + half_w)
+                content_bounds[2] = min(content_bounds[2], float(ob.location.y) - half_h)
+                content_bounds[3] = max(content_bounds[3], float(ob.location.y) + half_h)
                 ob["lyric_entrance_enabled"] = True
                 ob["lyric_entrance_direction"] = direction
                 ob["lyric_frame_in"] = int(frame_in)
@@ -431,10 +448,13 @@ class LYRICPV_OT_generate(Operator):
                     go.scale = (0.001, 0.001, 0.001)
                     go.keyframe_insert(data_path="scale", frame=min(frame_in + 3, frame_out))
                     created += 1
-        scene["lyric_pv_layouts"] = json.dumps(layouts, ensure_ascii=False, sort_keys=True)
+        if all(math.isfinite(value) for value in content_bounds):
+            controller["lyric_content_bounds"] = [float(value) for value in content_bounds]
         props.generated_count = len(entries)
         invalidate_entrance_cache()
+        update_lyric_positions(props, context)
         update_lyric_entrance_positions(scene)
+        scene["lyric_pv_layouts"] = json.dumps(layouts, ensure_ascii=False, sort_keys=True)
         self.report({"INFO"}, f"已生成 {len(entries)} 句歌词（{created} 个文字对象），集合：{PV_ROOT_NAME}。")
         return {"FINISHED"}
 
