@@ -176,7 +176,6 @@ class LYRICPV_OT_generate(Operator):
             controller.hide_set(True, view_layer=context.view_layer)
 
         created = 0
-        content_bounds = [float('inf'), float('-inf'), float('inf'), float('-inf')]
         for index, (seconds, lyric) in enumerate(entries):
             if not lyric.strip():
                 continue
@@ -336,14 +335,19 @@ class LYRICPV_OT_generate(Operator):
                 group_y -= min_y + frame_height * 0.5
                 sentence_group.location = (group_center_x, group_y, 0.0)
                 bound_w = total_width * fit
-                bound_h = base_size * fit * 1.25
+                if style == "EMPHASIS" and source_format == "YRC" and glyphs:
+                    first_glyph_width = next((item[3] for item in glyphs if item[2] == 0), 0.0)
+                    bound_w += first_glyph_width * fit * 0.35
+                bound_h = base_size * fit * (1.4 if style == "EMPHASIS" else 1.25)
                 angle = math.radians(float(record["rotation"]))
                 rotated_w = abs(bound_w * math.cos(angle)) + abs(bound_h * math.sin(angle))
                 rotated_h = abs(bound_w * math.sin(angle)) + abs(bound_h * math.cos(angle))
-                content_bounds[0] = min(content_bounds[0], group_center_x - rotated_w * 0.5)
-                content_bounds[1] = max(content_bounds[1], group_center_x + rotated_w * 0.5)
-                content_bounds[2] = min(content_bounds[2], group_y - rotated_h * 0.5)
-                content_bounds[3] = max(content_bounds[3], group_y + rotated_h * 0.5)
+                sentence_group["lyric_local_bounds"] = [
+                    -rotated_w * 0.5, rotated_w * 0.5,
+                    -rotated_h * 0.5, rotated_h * 0.5,
+                ]
+                sentence_group["lyric_layout_x"] = float(group_center_x)
+                sentence_group["lyric_layout_y"] = float(group_y)
                 sentence_group["lyric_base_x"] = float(group_center_x)
                 sentence_group["lyric_base_y"] = float(group_y)
                 sentence_group["lyric_base_z"] = 0.0
@@ -407,10 +411,9 @@ class LYRICPV_OT_generate(Operator):
                 ob["lyric_base_x"] = float(ob.location.x)
                 half_w = max(float(ob.dimensions.x), base_size * 0.12) * 0.5
                 half_h = max(float(ob.dimensions.y), base_size * 0.12) * 0.5
-                content_bounds[0] = min(content_bounds[0], float(ob.location.x) - half_w)
-                content_bounds[1] = max(content_bounds[1], float(ob.location.x) + half_w)
-                content_bounds[2] = min(content_bounds[2], float(ob.location.y) - half_h)
-                content_bounds[3] = max(content_bounds[3], float(ob.location.y) + half_h)
+                ob["lyric_local_bounds"] = [-half_w, half_w, -half_h, half_h]
+                ob["lyric_layout_x"] = float(ob.location.x)
+                ob["lyric_layout_y"] = float(ob.location.y)
                 ob["lyric_entrance_enabled"] = True
                 ob["lyric_entrance_direction"] = direction
                 ob["lyric_frame_in"] = int(frame_in)
@@ -448,8 +451,6 @@ class LYRICPV_OT_generate(Operator):
                     go.scale = (0.001, 0.001, 0.001)
                     go.keyframe_insert(data_path="scale", frame=min(frame_in + 3, frame_out))
                     created += 1
-        if all(math.isfinite(value) for value in content_bounds):
-            controller["lyric_content_bounds"] = [float(value) for value in content_bounds]
         props.generated_count = len(entries)
         invalidate_entrance_cache()
         update_lyric_positions(props, context)
