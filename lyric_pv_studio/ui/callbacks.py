@@ -1,6 +1,7 @@
 """Property update callbacks triggered by UI changes."""
 
 import bpy
+from mathutils import Matrix
 
 from ..animation.runtime import update_lyric_entrance_positions
 from ..constants import PV_ROOT_NAME, PV_TAG
@@ -59,15 +60,38 @@ def update_lyric_positions(self, context):
         return
     distance = get_occlusion_safe_distance(scene, camera, props)
     min_x, max_x, min_y, max_y = camera_frame_bounds(scene, camera, distance)
-    frame_width = max_x - min_x
-    frame_height = max_y - min_y
-    x = min_x + frame_width * (props.display_x + 0.5)
-    y = min_y + frame_height * (props.display_y + 0.5)
-    controller.parent = camera
-    controller.location = (x, y, -distance)
-    controller.rotation_euler = (0.0, 0.0, 0.0)
+    frame_width = max(1e-6, max_x - min_x)
+    frame_height = max(1e-6, max_y - min_y)
     base_distance = max(1e-4, float(controller.get("lyric_base_distance", distance)))
     depth_ratio = max(0.25, min(4.0, float(distance) / base_distance))
+
+    x = min_x + frame_width * (float(props.display_x) + 0.5)
+    y = min_y + frame_height * (float(props.display_y) + 0.5)
+    bounds = controller.get("lyric_content_bounds", None)
+    if bounds is not None and len(bounds) == 4:
+        local_min_x, local_max_x, local_min_y, local_max_y = (
+            float(value) * depth_ratio for value in bounds
+        )
+        margin_x = frame_width * 0.035
+        margin_y = frame_height * 0.035
+        low_x = min_x + margin_x - local_min_x
+        high_x = max_x - margin_x - local_max_x
+        low_y = min_y + margin_y - local_min_y
+        high_y = max_y - margin_y - local_max_y
+        if low_x <= high_x:
+            x = max(low_x, min(high_x, x))
+        else:
+            x = (min_x + max_x - local_min_x - local_max_x) * 0.5
+        if low_y <= high_y:
+            y = max(low_y, min(high_y, y))
+        else:
+            y = (min_y + max_y - local_min_y - local_max_y) * 0.5
+
+    if controller.parent != camera:
+        controller.parent = camera
+        controller.matrix_parent_inverse = Matrix.Identity(4)
+    controller.location = (x, y, -distance)
+    controller.rotation_euler = (0.0, 0.0, 0.0)
     controller.scale = (depth_ratio, depth_ratio, depth_ratio)
 
 
