@@ -13,6 +13,9 @@ def smooth_action_fcurves(obj, interpolation="BEZIER", handle_type="AUTO_CLAMPED
     try:
         for fc in action.fcurves:
             for key in fc.keyframe_points:
+                if fc.data_path in {"hide_render", "hide_viewport"}:
+                    key.interpolation = "CONSTANT"
+                    continue
                 key.interpolation = interpolation
                 key.handle_left_type = handle_type
                 key.handle_right_type = handle_type
