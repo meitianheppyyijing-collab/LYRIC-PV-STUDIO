@@ -13,6 +13,9 @@ def smooth_action_fcurves(obj, interpolation="BEZIER", handle_type="AUTO_CLAMPED
     try:
         for fc in action.fcurves:
             for key in fc.keyframe_points:
+                if getattr(fc, "data_path", "") in {"hide_render", "hide_viewport"}:
+                    key.interpolation = "CONSTANT"
+                    continue
                 key.interpolation = interpolation
                 key.handle_left_type = handle_type
                 key.handle_right_type = handle_type
@@ -37,6 +40,45 @@ def key_object_scale(obj, frame_in, frame_out, fade, pop_enabled):
         obj.scale = base
         obj.keyframe_insert(data_path="scale", frame=frame_out)
     smooth_action_fcurves(obj)
+
+
+def key_glyph_reveal(obj, frame_in, pop_y=0.0, pop_z=0.0, pop_frames=4):
+    """Reveal one glyph on its own timing without scaling the glyph independently."""
+    frame_in = int(frame_in)
+    first_frame = frame_in - 1
+    obj.hide_render = True
+    obj.hide_viewport = True
+    obj.keyframe_insert(data_path="hide_render", frame=first_frame)
+    obj.keyframe_insert(data_path="hide_viewport", frame=first_frame)
+    obj.hide_render = False
+    obj.hide_viewport = False
+    obj.keyframe_insert(data_path="hide_render", frame=frame_in)
+    obj.keyframe_insert(data_path="hide_viewport", frame=frame_in)
+
+    if abs(float(pop_y)) > 1e-8 or abs(float(pop_z)) > 1e-8:
+        base = obj.location.copy()
+        obj.location = (base.x, base.y + float(pop_y), base.z + float(pop_z))
+        obj.keyframe_insert(data_path="location", frame=frame_in)
+        obj.location = base
+        obj.keyframe_insert(
+            data_path="location",
+            frame=frame_in + max(2, int(pop_frames)),
+        )
+
+    action = getattr(getattr(obj, "animation_data", None), "action", None)
+    if action:
+        try:
+            for curve in action.fcurves:
+                if curve.data_path in {"hide_render", "hide_viewport"}:
+                    for key in curve.keyframe_points:
+                        key.interpolation = "CONSTANT"
+                elif curve.data_path == "location":
+                    for key in curve.keyframe_points:
+                        key.interpolation = "BEZIER"
+                        key.handle_left_type = "AUTO_CLAMPED"
+                        key.handle_right_type = "AUTO_CLAMPED"
+        except (AttributeError, TypeError):
+            pass
 
 
 def apply_text_animation(obj, record, frame_in, frame_out, props, rng):

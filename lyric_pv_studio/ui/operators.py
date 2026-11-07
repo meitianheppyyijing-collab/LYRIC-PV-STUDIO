@@ -7,8 +7,9 @@ import random
 import bpy
 from bpy.types import Operator
 
-from ..animation.keyframing import apply_text_animation, key_object_scale
+from ..animation.keyframing import apply_text_animation, key_glyph_reveal, key_object_scale
 from ..animation.runtime import invalidate_entrance_cache, update_lyric_entrance_positions
+from .callbacks import update_lyric_positions
 from ..blender.collections import (
     get_or_create_collection,
     remove_generated_collection,
@@ -231,6 +232,21 @@ class LYRICPV_OT_generate(Operator):
             line_fit = 1.0
             if per_char:
                 display_units = lyric_display_units(lyric)
+                # The sentence group owns whole-line scale and camera entrance;
+                # glyphs keep their own timing, visibility, and rotation animation.
+                sentence_group = bpy.data.objects.new(
+                    f"LPV_Lyric_{index+1:03d}_Sentence",
+                    None,
+                )
+                collection.objects.link(sentence_group)
+                sentence_group.empty_display_type = "PLAIN_AXES"
+                sentence_group.empty_display_size = 0.01
+                sentence_group.parent = controller
+                sentence_group.location = (0.0, 0.0, 0.0)
+                sentence_group.scale = (1.0, 1.0, 1.0)
+                sentence_group[PV_TAG] = True
+                sentence_group["lyric_sentence_group"] = True
+                sentence_group["lyric_index"] = index
                 # Create all glyph objects first, then evaluate the view layer once.
                 for ci, (unit_text, source_char_index) in enumerate(display_units):
                     cu = bpy.data.curves.new(f"LPV_Lyric_{index+1:03d}_{ci+1:03d}_Curve", type="FONT")
@@ -245,7 +261,7 @@ class LYRICPV_OT_generate(Operator):
                         cu.font = font
                     ob = bpy.data.objects.new(f"LPV_Lyric_{index+1:03d}_Glyph_{ci+1:03d}", cu)
                     collection.objects.link(ob)
-                    ob.parent = controller
+                    ob.parent = sentence_group
                     ob.data.materials.append(material)
                     ob[PV_TAG] = True
                     glyphs.append((ob, 0.0, ci, 0.0))
@@ -287,26 +303,21 @@ class LYRICPV_OT_generate(Operator):
                     ob.location = (bx, 0.0, 0.0)
                     ob.rotation_euler.z = math.radians(float(record["rotation"]))
                     ob["lyric_font_multiplier"] = multiplier
-                    ob["lyric_base_x"] = bx + float(record["x"])
-                    ob["lyric_base_y"] = float(record["y"])
-                    ob["lyric_base_z"] = 0.0
                     ob["lyric_index"] = index
                     ob["lyric_text"] = lyric
-                    ob["lyric_entrance_enabled"] = True
-                    ob["lyric_entrance_direction"] = direction
                     if yrc_char_frames and source_char_index < len(yrc_char_frames):
                         char_frame_in = max(frame_in, min(frame_out - 1, int(yrc_char_frames[source_char_index])))
                     else:
                         char_frame_in = int(frame_in + (ci * props.character_stagger if reveal_enabled else 0))
-                    ob["lyric_frame_in"] = char_frame_in
-                    ob["lyric_frame_out"] = int(frame_out)
-                    ob["lyric_fade_frames"] = int(fade)
-                    ob["lyric_pop_enabled"] = reveal_enabled
-                    ob["lyric_pop_frames"] = max(2, fade)
-                    ob["lyric_pop_y"] = -base_size * 0.22 if pop_motion else 0.0
-                    ob["lyric_pop_z"] = props.spatial_depth if pop_motion else 0.0
-                    char_start = int(ob["lyric_frame_in"])
-                    key_object_scale(ob, char_start, frame_out, fade, reveal_enabled)
+                    ob["lyric_character_frame_in"] = char_frame_in
+                    char_start = int(char_frame_in)
+                    key_glyph_reveal(
+                        ob,
+                        char_start,
+                        pop_y=-base_size * 0.22 if pop_motion else 0.0,
+                        pop_z=props.spatial_depth if pop_motion else 0.0,
+                        pop_frames=max(2, fade),
+                    )
                     apply_text_animation(ob, record, char_start, frame_out, props, random.Random(int(props.random_seed) + index * 997 + ci))
                     created += 1
                 group_center_x = float(record["x"])
@@ -322,11 +333,34 @@ class LYRICPV_OT_generate(Operator):
                 )
                 group_center_x -= min_x + frame_width * 0.5
                 group_y -= min_y + frame_height * 0.5
+                sentence_group.location = (group_center_x, group_y, 0.0)
+                bound_w = total_width * fit
+                if style == "EMPHASIS" and source_format == "YRC" and glyphs:
+                    first_glyph_width = next((item[3] for item in glyphs if item[2] == 0), 0.0)
+                    bound_w += first_glyph_width * fit * 0.35
+                bound_h = base_size * fit * (1.4 if style == "EMPHASIS" else 1.25)
+                angle = math.radians(float(record["rotation"]))
+                rotated_w = abs(bound_w * math.cos(angle)) + abs(bound_h * math.sin(angle))
+                rotated_h = abs(bound_w * math.sin(angle)) + abs(bound_h * math.cos(angle))
+                sentence_group["lyric_local_bounds"] = [
+                    -rotated_w * 0.5, rotated_w * 0.5,
+                    -rotated_h * 0.5, rotated_h * 0.5,
+                ]
+                sentence_group["lyric_layout_x"] = float(group_center_x)
+                sentence_group["lyric_layout_y"] = float(group_y)
+                sentence_group["lyric_base_x"] = float(group_center_x)
+                sentence_group["lyric_base_y"] = float(group_y)
+                sentence_group["lyric_base_z"] = 0.0
+                sentence_group["lyric_entrance_enabled"] = True
+                sentence_group["lyric_entrance_direction"] = direction
+                sentence_group["lyric_frame_in"] = int(frame_in)
+                sentence_group["lyric_frame_out"] = int(frame_out)
+                sentence_group["lyric_fade_frames"] = int(fade)
+                sentence_group["lyric_pop_enabled"] = False
+                key_object_scale(sentence_group, frame_in, frame_out, fade, reveal_enabled)
                 for ob, cursor_x, ci, width, source_char_index in glyphs:
-                    ob.location.x = start_x + cursor_x * fit + group_center_x
-                    ob.location.y = group_y
-                    ob["lyric_base_x"] = float(ob.location.x)
-                    ob["lyric_base_y"] = float(ob.location.y)
+                    ob.location.x = start_x + cursor_x * fit
+                    ob.location.y = 0.0
             else:
                 cu = bpy.data.curves.new(f"LPV_Lyric_{index+1:03d}_Curve", type="FONT")
                 cu.body = lyric
@@ -375,6 +409,11 @@ class LYRICPV_OT_generate(Operator):
                 ob.location.x = abs_x - (min_x + frame_width * 0.5)
                 ob.location.y = abs_y - (min_y + frame_height * 0.5)
                 ob["lyric_base_x"] = float(ob.location.x)
+                half_w = max(float(ob.dimensions.x), base_size * 0.12) * 0.5
+                half_h = max(float(ob.dimensions.y), base_size * 0.12) * 0.5
+                ob["lyric_local_bounds"] = [-half_w, half_w, -half_h, half_h]
+                ob["lyric_layout_x"] = float(ob.location.x)
+                ob["lyric_layout_y"] = float(ob.location.y)
                 ob["lyric_entrance_enabled"] = True
                 ob["lyric_entrance_direction"] = direction
                 ob["lyric_frame_in"] = int(frame_in)
@@ -412,10 +451,11 @@ class LYRICPV_OT_generate(Operator):
                     go.scale = (0.001, 0.001, 0.001)
                     go.keyframe_insert(data_path="scale", frame=min(frame_in + 3, frame_out))
                     created += 1
-        scene["lyric_pv_layouts"] = json.dumps(layouts, ensure_ascii=False, sort_keys=True)
         props.generated_count = len(entries)
         invalidate_entrance_cache()
+        update_lyric_positions(props, context)
         update_lyric_entrance_positions(scene)
+        scene["lyric_pv_layouts"] = json.dumps(layouts, ensure_ascii=False, sort_keys=True)
         self.report({"INFO"}, f"已生成 {len(entries)} 句歌词（{created} 个文字对象），集合：{PV_ROOT_NAME}。")
         return {"FINISHED"}
 

@@ -24,8 +24,14 @@ def _build_entrance_index(scene, collection, cache_key, current_frame):
         try:
             if not (
                     obj.get(PV_TAG, False)
-                    and obj.type == "FONT"
-                    and obj.get("lyric_entrance_enabled", False)
+                    and (
+                        (obj.type == "FONT" and obj.get("lyric_entrance_enabled", False))
+                        or (
+                            obj.type == "EMPTY"
+                            and obj.get("lyric_sentence_group", False)
+                            and obj.get("lyric_entrance_enabled", False)
+                        )
+                    )
             ):
                 continue
             frame_in = int(float(obj.get("lyric_frame_in", 1.0)))
@@ -85,6 +91,12 @@ def update_lyric_entrance_positions(scene):
         min_x, max_x, min_y, max_y = camera_frame_bounds(scene, camera, depth)
         frame_width = max(1e-6, max_x - min_x)
         frame_height = max(1e-6, max_y - min_y)
+        # Controller scale compensates for depth changes. Convert the current
+        # camera-plane dimensions back to controller-local units before adding
+        # entrance offsets, otherwise offsets are scaled twice.
+        controller_scale = max(1e-6, abs(float(controller.scale.x)))
+        local_frame_width = frame_width / controller_scale
+        local_frame_height = frame_height / controller_scale
         slide_frames = max(1, int(props.slide_frames))
         distance_factor = max(1.0, float(props.entrance_distance))
         current_frame = int(scene.frame_current)
@@ -111,13 +123,13 @@ def update_lyric_entrance_positions(scene):
                 if direction == "NONE":
                     start_offset = (0.0, 0.0, 0.0)
                 elif direction == "LEFT":
-                    start_offset = (-frame_width * distance_factor, 0.0, 0.0)
+                    start_offset = (-local_frame_width * distance_factor, 0.0, 0.0)
                 elif direction == "RIGHT":
-                    start_offset = (frame_width * distance_factor, 0.0, 0.0)
+                    start_offset = (local_frame_width * distance_factor, 0.0, 0.0)
                 elif direction == "TOP":
-                    start_offset = (0.0, frame_height * distance_factor, 0.0)
+                    start_offset = (0.0, local_frame_height * distance_factor, 0.0)
                 else:
-                    start_offset = (0.0, -frame_height * distance_factor, 0.0)
+                    start_offset = (0.0, -local_frame_height * distance_factor, 0.0)
                 if fade_frames > 0 and current_frame > frame_out - fade_frames:
                     exit_t = max(0.0, min(1.0, (current_frame - (frame_out - fade_frames)) / max(1, fade_frames)))
                     exit_eased = exit_t * exit_t * (3.0 - 2.0 * exit_t)
