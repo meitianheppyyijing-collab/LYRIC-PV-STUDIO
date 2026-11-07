@@ -67,32 +67,52 @@ def update_lyric_positions(self, context):
 
     x = min_x + frame_width * (float(props.display_x) + 0.5)
     y = min_y + frame_height * (float(props.display_y) + 0.5)
-    bounds = controller.get("lyric_content_bounds", None)
-    if bounds is not None and len(bounds) == 4:
-        local_min_x, local_max_x, local_min_y, local_max_y = (
-            float(value) * depth_ratio for value in bounds
-        )
-        margin_x = frame_width * 0.035
-        margin_y = frame_height * 0.035
-        low_x = min_x + margin_x - local_min_x
-        high_x = max_x - margin_x - local_max_x
-        low_y = min_y + margin_y - local_min_y
-        high_y = max_y - margin_y - local_max_y
-        if low_x <= high_x:
-            x = max(low_x, min(high_x, x))
-        else:
-            x = (min_x + max_x - local_min_x - local_max_x) * 0.5
-        if low_y <= high_y:
-            y = max(low_y, min(high_y, y))
-        else:
-            y = (min_y + max_y - local_min_y - local_max_y) * 0.5
-
     if controller.parent != camera:
         controller.parent = camera
         controller.matrix_parent_inverse = Matrix.Identity(4)
     controller.location = (x, y, -distance)
     controller.rotation_euler = (0.0, 0.0, 0.0)
     controller.scale = (depth_ratio, depth_ratio, depth_ratio)
+
+    # Keep each sentence/line inside the camera independently. This preserves
+    # the designed spread of multiple lyrics while preventing edge lines from
+    # being pushed out of frame by the global display offset.
+    margin_x = frame_width * 0.035
+    margin_y = frame_height * 0.035
+    for obj in collection.all_objects:
+        if not obj.get(PV_TAG, False):
+            continue
+        is_sentence = obj.type == "EMPTY" and obj.get("lyric_sentence_group", False)
+        is_line = obj.type == "FONT" and obj.get("lyric_entrance_enabled", False)
+        if not (is_sentence or is_line):
+            continue
+        local_bounds = obj.get("lyric_local_bounds", None)
+        if local_bounds is None or len(local_bounds) != 4:
+            continue
+        local_min_x, local_max_x, local_min_y, local_max_y = (
+            float(value) for value in local_bounds
+        )
+        low_x = (min_x + margin_x - x) / depth_ratio - local_min_x
+        high_x = (max_x - margin_x - x) / depth_ratio - local_max_x
+        low_y = (min_y + margin_y - y) / depth_ratio - local_min_y
+        high_y = (max_y - margin_y - y) / depth_ratio - local_max_y
+
+        layout_x = float(obj.get("lyric_layout_x", obj.get("lyric_base_x", obj.location.x)))
+        layout_y = float(obj.get("lyric_layout_y", obj.get("lyric_base_y", obj.location.y)))
+        if low_x <= high_x:
+            adjusted_x = max(low_x, min(high_x, layout_x))
+        else:
+            adjusted_x = ((min_x + max_x) * 0.5 - x) / depth_ratio - (local_min_x + local_max_x) * 0.5
+        if low_y <= high_y:
+            adjusted_y = max(low_y, min(high_y, layout_y))
+        else:
+            adjusted_y = ((min_y + max_y) * 0.5 - y) / depth_ratio - (local_min_y + local_max_y) * 0.5
+
+        obj["lyric_base_x"] = float(adjusted_x)
+        obj["lyric_base_y"] = float(adjusted_y)
+        obj.location.x = adjusted_x
+        obj.location.y = adjusted_y
+
 
 
 def update_lyric_entrance_settings(self, context):
