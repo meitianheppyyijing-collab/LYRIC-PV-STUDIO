@@ -6,7 +6,7 @@ A Blender add-on for creating animated lyric PVs from LRC/YRC lyric files, featu
 
 - **Blender:** 5.2 or newer (targets Blender 5.2 LTS)
 - **Author / project attribution:** 静意
-- **License:** GPL-3.0-or-later
+- **License:** GPL-3.0
 
 ## Project Structure
 
@@ -49,4 +49,6 @@ For detailed setup notes, see [the installation guide](docs/installation.md) and
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+Copyright (C) 2026 静意, SOR2171
+
+Licensed under the GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE).
