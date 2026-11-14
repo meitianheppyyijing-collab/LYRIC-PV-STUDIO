@@ -6,7 +6,7 @@
 
 - **Blender：** 5.2 或更高版本（目标版本 Blender 5.2 LTS)
 - **作者 / 项目归属：** 静意
-- **许可证：** GPL-3.0-or-later
+- **许可证：** GPL-3.0
 
 ## 项目结构
 
@@ -49,4 +49,6 @@ lyric_pv_studio/
 
 ## 许可证
 
-GPL-3.0-or-later。详见 [LICENSE](LICENSE)。
+Copyright (C) 2026 静意, SOR2171
+
+本项目基于 GNU General Public License v3.0（GPL-3.0）发布。详见 [LICENSE](LICENSE)。
