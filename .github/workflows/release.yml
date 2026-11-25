@@ -25,10 +25,51 @@ jobs:
           zip -r "${ZIP_NAME}" lyric_pv_studio -x "*/__pycache__/*" "*.pyc" "*.pyo"
           echo "RELEASE_ZIP=${ZIP_NAME}" >> $GITHUB_ENV
 
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          tag = os.environ.get("TAG_NAME", "").strip()
+          ver = tag.lstrip("vV")
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          lines = text.splitlines()
+
+          def extract_section(pattern):
+              start = None
+              for i, line in enumerate(lines):
+                  if re.match(pattern, line, re.IGNORECASE):
+                      start = i + 1
+                      break
+              if start is None:
+                  return ""
+              body = []
+              for line in lines[start:]:
+                  if line.startswith("## "):
+                      break
+                  body.append(line)
+              return "\n".join(body).strip()
+
+          notes = ""
+          if ver:
+              notes = extract_section(rf"^##\s+\[?v?{re.escape(ver)}\]?(?:\s|$|—|-|:)")
+          if not notes:
+              notes = extract_section(r"^##\s+\[?Unreleased\]?(?:\s|$|—|-|:)")
+
+          pathlib.Path("RELEASE_NOTES.md").write_text(
+              (notes + "\n") if notes else "", encoding="utf-8"
+          )
+          PY
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: ${{ env.RELEASE_ZIP }}
           generate_release_notes: true
           draft: false
