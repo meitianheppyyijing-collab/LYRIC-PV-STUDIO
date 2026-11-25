@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### 新增与优化
+- 更新默认歌词材质与默认几何节点配置：
+  - 主歌词材质（`LPV_Text_Material`）升级为 `RGB -> Reroute -> Principled BSDF (Base Color + Emission Color, Roughness=0.5)` 节点结构，默认字幕颜色调整为暖橙色 `(1.0, 0.504, 0.162)`。
+  - 新增无影自发光描边材质（`LPV_Text_Outline`，通过 `Light Path.Is Shadow Ray` 混合 `Emission` 与 `Transparent BSDF`）以及默认 `lyc_solidify` 几何节点组（提供 `Text Depth=0.02`、`Outline Thickness=0.0055`、`Z Offset=-0.0015`、`Outline Material` 接口），生成文字对象时自动挂载，并在清理时同步回收孤立的带标记节点组。
+
 ## v0.6.0 — SRT support & unified lyric cache
 
 ### 新增与优化

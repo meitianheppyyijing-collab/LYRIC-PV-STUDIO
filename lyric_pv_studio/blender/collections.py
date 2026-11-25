@@ -62,6 +62,9 @@ def remove_generated_collection():
     for mat in list(bpy.data.materials):
         if mat.get(PV_TAG, False) and mat.users == 0:
             bpy.data.materials.remove(mat)
+    for ng in list(bpy.data.node_groups):
+        if ng.get(PV_TAG, False) and ng.users == 0:
+            bpy.data.node_groups.remove(ng)
     if not collection.objects and not collection.children:
         bpy.data.collections.remove(collection)
     invalidate_entrance_cache()
