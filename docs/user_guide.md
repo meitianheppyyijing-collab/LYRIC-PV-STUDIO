@@ -2,13 +2,13 @@
 
 ## Preparing lyrics
 
-Prepare an `.lrc` file containing timestamped lyric lines. Keep a backup of the source file before experimenting with a new project.
+Prepare an `.lrc`, `.yrc`, or `.srt` file containing timestamped lyric or subtitle lines. Keep a backup of the source file before experimenting with a new project.
 
 ## Generating a lyric PV
 
 1. Open a Blender project and install/enable LYRIC PV STUDIO.
 2. Open the 3D View sidebar and locate the **Lyric PV** panel.
-3. Use the panel's lyric import workflow to select the LRC file.
+3. Select your `.lrc`, `.yrc`, or `.srt` file in the unified selector and click import (format is detected automatically).
 4. Review the generated lyric objects and animation in the scene and timeline.
 5. Save a separate `.blend` project before making substantial adjustments.
 

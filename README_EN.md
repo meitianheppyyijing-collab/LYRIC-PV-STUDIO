@@ -1,8 +1,8 @@
 # LYRIC PV STUDIO
 
-[English](README_EN.md) | [简体中文](README.md)
+English | [简体中文](README.md)
 
-A Blender add-on for creating animated lyric PVs from LRC/YRC lyric files, featuring automatic typography layout, camera occlusion avoidance, and spatial motion animations.
+A Blender add-on for creating animated lyric PVs from LRC/YRC/SRT lyric and subtitle files, featuring automatic typography layout, camera occlusion avoidance, and spatial motion animations.
 
 - **Blender:** 5.2 or newer (targets Blender 5.2 LTS)
 - **Author / project attribution:** 静意
@@ -39,9 +39,9 @@ Clone the repository and zip the `lyric_pv_studio` directory into a `.zip` file 
 
 ## Usage
 
-1. Prepare an `.lrc` or `.yrc` lyric file with timestamps.
+1. Prepare an `.lrc`, `.yrc`, or `.srt` lyric/subtitle file with timestamps.
 2. Open the **歌词PV** sidebar panel in Blender.
-3. Import your lyric file using the **导入 LRC** or **导入 YRC** button.
+3. Select the file in the unified file selector and click **导入歌词 / 字幕** (format is detected automatically).
 4. Adjust typography, alignment, camera, and animation settings as needed.
 5. Click **生成歌词排版与动画** to generate the lyric objects and animations in your scene.
 
