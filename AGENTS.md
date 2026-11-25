@@ -15,8 +15,9 @@ Blender 5.2+ 歌词 PV 插件 **LYRIC PV STUDIO** 的仓库地图与协作约定
   - `animation/keyframing.py`：缩放、逐字显隐、旋转/弹跳/漂浮关键帧烘焙与贝塞尔曲线防过冲平滑。
   - `animation/runtime.py`：逐帧实时入退场缓动计算、帧事件缓存（`_ENTRANCE_CACHE`）与 `load_post` 缓存清理回调。
 - `blender/`
-  - `blender/collections.py`：插件专用集合创建、基于 `PV_TAG` 的安全删除与孤立数据块回收、旧背景集合清理。
-  - `blender/materials.py`：基于 `Principled BSDF` 的共享发光字幕材质创建与复用。
+  - `blender/collections.py`：插件专用集合创建、基于 `PV_TAG` 的安全删除与孤立数据块（含材质与几何节点组）回收、旧背景集合清理。
+  - `blender/materials.py`：基于 `RGB -> Reroute -> Principled BSDF` 的默认发光字幕材质与无影自发光描边材质（`LPV_Text_Outline`）创建与复用。
+  - `blender/geometry_nodes.py`：默认 `lyc_solidify` 几何节点组（文字厚度挤出与外轮廓描边）创建、复用与修改器挂载。
 - `ui/`
   - `ui/properties.py`：挂在 `Scene.lyric_pv_props` 上的全部参数定义（`LYRICPV_Properties`）。
   - `ui/operators.py`：统一导入 LRC/YRC/SRT、生成歌词 PV、全量/单句重抽、锁定/解锁、彻底清理等操作符。

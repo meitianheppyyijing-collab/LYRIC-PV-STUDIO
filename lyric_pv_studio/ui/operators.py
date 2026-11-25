@@ -15,7 +15,11 @@ from ..blender.collections import (
     remove_generated_collection,
     remove_legacy_generated_background,
 )
-from ..blender.materials import make_text_material
+from ..blender.geometry_nodes import (
+    attach_lyric_solidify_modifier,
+    get_or_create_lyric_solidify_node_group,
+)
+from ..blender.materials import make_outline_material, make_text_material
 from ..constants import PV_ROOT_NAME, PV_TAG
 from ..core.document import (
     LyricDocument,
@@ -148,6 +152,8 @@ class LYRICPV_OT_generate(Operator):
         remove_legacy_generated_background()
         collection = get_or_create_collection(scene)
         material = make_text_material("LPV_Text_Material", props.text_color, props.glow_strength)
+        outline_material = make_outline_material()
+        solidify_group = get_or_create_lyric_solidify_node_group(outline_material)
         color_materials = {}
 
         glitch_mats = {}
@@ -298,6 +304,7 @@ class LYRICPV_OT_generate(Operator):
                     collection.objects.link(ob)
                     ob.parent = sentence_group
                     ob.data.materials.append(line_material)
+                    attach_lyric_solidify_modifier(ob, solidify_group, outline_material)
                     ob[PV_TAG] = True
                     row_glyphs[-1].append((ob, 0.0, ci, 0.0))
                 row_glyphs = [row for row in row_glyphs if row]
@@ -451,6 +458,7 @@ class LYRICPV_OT_generate(Operator):
                 collection.objects.link(ob)
                 ob.parent = controller
                 ob.data.materials.append(line_material)
+                attach_lyric_solidify_modifier(ob, solidify_group, outline_material)
                 ob[PV_TAG] = True
                 ob["lyric_index"] = index
                 ob["lyric_text"] = lyric

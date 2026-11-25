@@ -207,7 +207,7 @@ class LYRICPV_Properties(PropertyGroup):
         size=4,
         min=0.0,
         max=1.0,
-        default=(1.0, 1.0, 1.0, 1.0),
+        default=(1.0, 0.503542, 0.162092, 1.0),
     )
     random_seed: IntProperty(
         name="随机种子",
