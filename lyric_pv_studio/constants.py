@@ -2,7 +2,7 @@
 
 PV_ROOT_NAME = "LYRIC_PV_STUDIO_GENERATED"
 PV_TAG = "lyric_pv_studio_generated"
-PV_VERSION = "0.5.15"
+PV_VERSION = "0.6.0"
 
 LAYOUT_STYLES = (
     "CLEAN_CENTER",

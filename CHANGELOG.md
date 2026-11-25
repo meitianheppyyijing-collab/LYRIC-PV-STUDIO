@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 — SRT support & unified lyric cache
 
 ### 新增与优化
 - 新增 SRT 字幕格式支持与统一文件导入入口：
