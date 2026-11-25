@@ -4,6 +4,7 @@ import bpy
 from bpy.app.handlers import persistent
 
 from ..constants import PV_ROOT_NAME, PV_TAG
+from ..core.document import invalidate_lyric_cache
 from ..core.spatial import camera_frame_bounds
 
 _ENTRANCE_CACHE = {}
@@ -159,3 +160,10 @@ def update_lyric_entrance_positions(scene):
 def lyric_pv_frame_change_handler(scene, depsgraph=None):
     """Blender frame change post-handler for real-time entrance updates."""
     update_lyric_entrance_positions(scene)
+
+
+@persistent
+def lyric_pv_load_post_handler(_dummy=None):
+    """Clear in-memory caches after loading a .blend file."""
+    invalidate_lyric_cache()
+    invalidate_entrance_cache()

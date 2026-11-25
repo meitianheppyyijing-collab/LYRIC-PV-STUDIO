@@ -100,7 +100,7 @@ def yrc_character_frame_map(timed_entry, fps, start_frame, time_offset=0.0):
         value = str(token.get("text", ""))
         if not value:
             continue
-        token_start = float(token.get("start_ms", 0)) - offset_ms
+        token_start = float(token.get("start_ms", 0)) + offset_ms
         token_duration = max(0.0, float(token.get("duration_ms", 0)))
         # Multi-character tokens are spread evenly across their source duration.
         count = max(1, len(value))

@@ -16,6 +16,7 @@ try:
     from .runtime import (
         invalidate_entrance_cache,
         lyric_pv_frame_change_handler,
+        lyric_pv_load_post_handler,
         update_lyric_entrance_positions,
     )
 except ImportError:
@@ -27,5 +28,6 @@ __all__ = [
     "smooth_action_fcurves",
     "invalidate_entrance_cache",
     "lyric_pv_frame_change_handler",
+    "lyric_pv_load_post_handler",
     "update_lyric_entrance_positions",
 ]

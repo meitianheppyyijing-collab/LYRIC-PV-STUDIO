@@ -1,8 +1,8 @@
 """Sidebar Panel in 3D Viewport for LYRIC PV STUDIO."""
 
-import json
-
 from bpy.types import Panel
+
+from ..core.document import get_lyric_document
 
 
 class LYRICPV_PT_main(Panel):
@@ -28,11 +28,8 @@ class LYRICPV_PT_main(Panel):
         yrc_box.prop(props, "yrc_path", text="YRC 文件")
         yrc_box.operator("lyric_pv.import_yrc", text="导入 YRC", icon="FILE_TEXT")
 
-        stored_entries = scene.get("lyric_pv_entries", "")
-        try:
-            loaded_count = len(json.loads(stored_entries)) if stored_entries else 0
-        except (TypeError, ValueError, json.JSONDecodeError):
-            loaded_count = 0
+        doc = get_lyric_document(scene)
+        loaded_count = doc.line_count if doc else 0
 
         if loaded_count:
             layout.label(text=f"已导入歌词：{loaded_count} 句")
