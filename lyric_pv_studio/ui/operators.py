@@ -17,14 +17,18 @@ from ..blender.collections import (
 )
 from ..blender.materials import make_text_material
 from ..constants import PV_ROOT_NAME, PV_TAG
+from ..core.document import (
+    LyricDocument,
+    clear_lyric_document,
+    get_lyric_document,
+    save_lyric_document,
+)
 from ..core.layout import load_layout_records, reroll_layout_records
 from ..core.parser import (
     estimate_lyric_unit_advance,
-    lyric_display_units,
     parse_lrc_text,
     parse_yrc_text,
     read_lyric_file,
-    yrc_character_frame_map,
 )
 from ..core.spatial import (
     camera_frame_bounds,
@@ -56,13 +60,10 @@ class LYRICPV_OT_import_lrc(Operator):
             self.report({"ERROR"}, "没有找到带时间戳的 LRC 歌词。")
             return {"CANCELLED"}
         scene = context.scene
-        scene["lyric_pv_entries"] = json.dumps([[float(t), lyric] for t, lyric in entries], ensure_ascii=False)
-        scene["lyric_pv_yrc_entries"] = "[]"
-        scene["lyric_pv_source"] = path
-        scene["lyric_pv_source_format"] = "LRC"
-        scene["lyric_pv_file_offset_ms"] = int(offset_ms)
-        props.generated_count = len(entries)
-        self.report({"INFO"}, f"已导入 {len(entries)} 句 LRC 歌词。")
+        doc = LyricDocument.from_lrc_entries(entries, source_path=path, file_offset_ms=offset_ms)
+        save_lyric_document(scene, doc)
+        props.generated_count = doc.line_count
+        self.report({"INFO"}, f"已导入 {doc.line_count} 句 LRC 歌词。")
         return {"FINISHED"}
 
 
@@ -88,14 +89,11 @@ class LYRICPV_OT_import_yrc(Operator):
             self.report({"ERROR"}, "没有识别到此格式的 YRC 歌词。")
             return {"CANCELLED"}
         scene = context.scene
-        scene["lyric_pv_entries"] = json.dumps([[float(t), lyric] for t, lyric in entries], ensure_ascii=False)
-        scene["lyric_pv_yrc_entries"] = json.dumps(timed_entries, ensure_ascii=False)
-        scene["lyric_pv_source"] = path
-        scene["lyric_pv_source_format"] = "YRC"
-        scene["lyric_pv_file_offset_ms"] = 0
-        props.generated_count = len(entries)
+        doc = LyricDocument.from_yrc_entries(entries, timed_entries, source_path=path)
+        save_lyric_document(scene, doc)
+        props.generated_count = doc.line_count
         token_count = sum(len(item["tokens"]) for item in timed_entries)
-        self.report({"INFO"}, f"已导入 {len(entries)} 句 YRC 歌词，保留 {token_count} 段逐字时间。")
+        self.report({"INFO"}, f"已导入 {doc.line_count} 句 YRC 歌词，保留 {token_count} 段逐字时间。")
         return {"FINISHED"}
 
 
@@ -108,36 +106,17 @@ class LYRICPV_OT_generate(Operator):
     def execute(self, context):
         scene = context.scene
         props = scene.lyric_pv_props
-        raw_entries = scene.get("lyric_pv_entries", "")
-        if not raw_entries:
-            self.report({"ERROR"}, "请先导入 LRC 歌词文件。")
-            return {"CANCELLED"}
-        try:
-            decoded = json.loads(raw_entries) if isinstance(raw_entries, str) else raw_entries
-            entries = [(float(item[0]), str(item[1])) for item in decoded]
-        except (TypeError, ValueError, IndexError, json.JSONDecodeError) as exc:
-            self.report({"ERROR"}, f"歌词数据无效，请重新导入 LRC：{exc}")
-            return {"CANCELLED"}
-        if not entries:
-            self.report({"ERROR"}, "没有可用的歌词，请重新导入 LRC。")
+        doc = get_lyric_document(scene)
+        if doc is None or not doc.lines:
+            self.report({"ERROR"}, "请先导入 LRC 或 YRC 歌词文件。")
             return {"CANCELLED"}
         camera = props.target_camera or scene.camera
         if camera is None or camera.type != "CAMERA" or camera.name not in scene.objects:
             self.report({"ERROR"}, "请选择当前场景中的有效摄像机。")
             return {"CANCELLED"}
 
-        entries.sort(key=lambda item: item[0])
-        source_format = str(scene.get("lyric_pv_source_format", "LRC")).upper()
-        try:
-            yrc_timed_entries = json.loads(scene.get("lyric_pv_yrc_entries", "[]")) if source_format == "YRC" else []
-        except (TypeError, ValueError, json.JSONDecodeError):
-            yrc_timed_entries = []
-        # Match YRC records to sentence order; LRC keeps its original sentence timing.
-        yrc_timing_by_text = {}
-        if source_format == "YRC":
-            for timed in yrc_timed_entries:
-                if isinstance(timed, dict):
-                    yrc_timing_by_text.setdefault(str(timed.get("text", "")), []).append(timed)
+        entries = doc.to_entries()
+        source_format = doc.source_format
         layouts = load_layout_records(scene, entries, props)
         remove_generated_collection()
         remove_legacy_generated_background()
@@ -175,17 +154,23 @@ class LYRICPV_OT_generate(Operator):
         if props.hide_lyrics_in_viewport:
             controller.hide_set(True, view_layer=context.view_layer)
 
+        timeline = doc.get_timeline(
+            fps=fps,
+            start_frame=start_frame,
+            time_offset=props.time_offset,
+            hold_gap=props.hold_gap,
+            fade_frames=props.fade_frames,
+        )
         created = 0
-        for index, (seconds, lyric) in enumerate(entries):
+        for line, timing in zip(doc.lines, timeline):
+            index = line.index
+            lyric = line.text
             if not lyric.strip():
                 continue
             record = layouts[str(index)]
-            next_seconds = entries[index + 1][0] if index + 1 < len(entries) else seconds + props.hold_gap
-            start_seconds = max(0.0, seconds + props.time_offset)
-            end_seconds = max(start_seconds + 0.05, next_seconds + props.time_offset)
-            frame_in = start_frame + round(start_seconds * fps)
-            frame_out = max(frame_in + 1, start_frame + round(end_seconds * fps))
-            fade = min(props.fade_frames, max(0, (frame_out - frame_in) // 2))
+            frame_in = timing.frame_in
+            frame_out = timing.frame_out
+            fade = timing.fade_frames
             style = record["style"]
             center_aligned_styles = {"CLEAN_CENTER", "VERTICAL", "DIAGONAL", "WIDE_SPACING", "PER_CHARACTER", "EMPHASIS"}
             if props.layout_alignment == "CENTER" and style in center_aligned_styles:
@@ -222,16 +207,11 @@ class LYRICPV_OT_generate(Operator):
             # only drives per-character reveal when the selected layout is per-character;
             # ordinary layouts keep the entire sentence in one FONT object.
             per_char = style in {"PER_CHARACTER", "EMPHASIS"}
-            yrc_timing = None
-            if source_format == "YRC":
-                candidates = yrc_timing_by_text.get(lyric, [])
-                if candidates:
-                    yrc_timing = candidates.pop(0)
-            yrc_char_frames = yrc_character_frame_map(yrc_timing, fps, start_frame, props.time_offset) if yrc_timing else []
+            unit_frames = timing.unit_frames
             glyphs = []
             line_fit = 1.0
             if per_char:
-                display_units = lyric_display_units(lyric)
+                display_units = line.units
                 # The sentence group owns whole-line scale and camera entrance;
                 # glyphs keep their own timing, visibility, and rotation animation.
                 sentence_group = bpy.data.objects.new(
@@ -248,9 +228,9 @@ class LYRICPV_OT_generate(Operator):
                 sentence_group["lyric_sentence_group"] = True
                 sentence_group["lyric_index"] = index
                 # Create all glyph objects first, then evaluate the view layer once.
-                for ci, (unit_text, source_char_index) in enumerate(display_units):
+                for ci, unit in enumerate(display_units):
                     cu = bpy.data.curves.new(f"LPV_Lyric_{index+1:03d}_{ci+1:03d}_Curve", type="FONT")
-                    cu.body = unit_text if unit_text.strip() else " "
+                    cu.body = unit.text if unit.text.strip() else " "
                     cu.size = base_size
                     cu.align_x = "LEFT"
                     cu.align_y = "CENTER"
@@ -270,7 +250,8 @@ class LYRICPV_OT_generate(Operator):
                 measured_glyphs = []
                 depsgraph = context.evaluated_depsgraph_get()
                 for ob, _cursor_x, ci, _width in glyphs:
-                    unit_text = display_units[ci][0]
+                    unit = display_units[ci]
+                    unit_text = unit.text
                     try:
                         evaluated = ob.evaluated_get(depsgraph)
                         measured_width = float(evaluated.dimensions.x)
@@ -280,12 +261,12 @@ class LYRICPV_OT_generate(Operator):
                     minimum_width = estimated_width * 0.72
                     width = measured_width if measured_width >= minimum_width else estimated_width
                     width = max(width, base_size * 0.18)
-                    measured_glyphs.append((ob, cursor, ci, width, display_units[ci][1]))
+                    measured_glyphs.append((ob, cursor, ci, width, unit.char_index))
                     lrc_emphasis_scale = 1.35 if source_format == "LRC" and style == "EMPHASIS" and ci == 0 else 1.0
                     advance_width = width * lrc_emphasis_scale
                     gap = max(base_size * 0.075, advance_width * 0.10) * effective_spacing
-                    current_is_space = display_units[ci][0].isspace()
-                    next_is_space = (ci + 1 < len(display_units) and display_units[ci + 1][0].isspace())
+                    current_is_space = unit.is_space
+                    next_is_space = (ci + 1 < len(display_units) and display_units[ci + 1].is_space)
                     has_space = current_is_space or next_is_space
                     cursor += advance_width + (gap if ci < len(display_units) - 1 and not has_space else 0.0)
                 glyphs = measured_glyphs
@@ -305,11 +286,14 @@ class LYRICPV_OT_generate(Operator):
                     ob["lyric_font_multiplier"] = multiplier
                     ob["lyric_index"] = index
                     ob["lyric_text"] = lyric
-                    if yrc_char_frames and source_char_index < len(yrc_char_frames):
-                        char_frame_in = max(frame_in, min(frame_out - 1, int(yrc_char_frames[source_char_index])))
+                    if unit_frames and ci < len(unit_frames):
+                        char_frame_in = unit_frames[ci].frame_in
+                        char_frame_out = unit_frames[ci].frame_out
                     else:
                         char_frame_in = int(frame_in + (ci * props.character_stagger if reveal_enabled else 0))
+                        char_frame_out = frame_out
                     ob["lyric_character_frame_in"] = char_frame_in
+                    ob["lyric_character_frame_out"] = char_frame_out
                     char_start = int(char_frame_in)
                     key_glyph_reveal(
                         ob,
@@ -451,12 +435,12 @@ class LYRICPV_OT_generate(Operator):
                     go.scale = (0.001, 0.001, 0.001)
                     go.keyframe_insert(data_path="scale", frame=min(frame_in + 3, frame_out))
                     created += 1
-        props.generated_count = len(entries)
+        props.generated_count = doc.line_count
         invalidate_entrance_cache()
         update_lyric_positions(props, context)
         update_lyric_entrance_positions(scene)
         scene["lyric_pv_layouts"] = json.dumps(layouts, ensure_ascii=False, sort_keys=True)
-        self.report({"INFO"}, f"已生成 {len(entries)} 句歌词（{created} 个文字对象），集合：{PV_ROOT_NAME}。")
+        self.report({"INFO"}, f"已生成 {doc.line_count} 句歌词（{created} 个文字对象），集合：{PV_ROOT_NAME}。")
         return {"FINISHED"}
 
 
@@ -468,7 +452,7 @@ class LYRICPV_OT_reroll_all(Operator):
     def execute(self, context):
         scene = context.scene
         props = scene.lyric_pv_props
-        if not scene.get("lyric_pv_entries"):
+        if get_lyric_document(scene) is None:
             self.report({"WARNING"}, "请先导入歌词并生成一次排版。")
             return {"CANCELLED"}
         reroll_layout_records(scene, props)
@@ -536,18 +520,9 @@ class LYRICPV_OT_clear(Operator):
         removed = remove_generated_collection()
         legacy_background_removed = remove_legacy_generated_background()
 
-        # Clear imported lyric payload and all per-import layout/source metadata.
-        lyric_keys = (
-            "lyric_pv_entries",
-            "lyric_pv_yrc_entries",
-            "lyric_pv_source",
-            "lyric_pv_source_format",
-            "lyric_pv_file_offset_ms",
-            "lyric_pv_layouts",
-            "lyric_pv_reroll",
-        )
-        cleared = 0
-        for key in lyric_keys:
+        # Clear imported lyric payload, in-memory cache, and layout metadata.
+        cleared = clear_lyric_document(scene)
+        for key in ("lyric_pv_layouts", "lyric_pv_reroll"):
             if key in scene:
                 del scene[key]
                 cleared += 1
