@@ -83,13 +83,19 @@ class LyricUnit:
 
 @dataclass(frozen=True)
 class LyricLine:
-    """One timestamped lyric line with pre-split display units."""
+    """One timestamped lyric or subtitle line with pre-split display units."""
 
     index: int
     text: str
     start_ms: int
     duration_ms: int | None = None
     units: tuple[LyricUnit, ...] = ()
+    align: str | None = None
+    valign: str | None = None
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    color: str | None = None
 
     @property
     def start_seconds(self):
@@ -105,6 +111,10 @@ class LyricLine:
     def has_word_timing(self):
         return any(unit.is_timed for unit in self.units)
 
+    @property
+    def has_explicit_placement(self):
+        return self.align is not None or self.valign is not None
+
     def to_dict(self):
         data = {
             "index": int(self.index),
@@ -114,6 +124,18 @@ class LyricLine:
         }
         if self.duration_ms is not None:
             data["duration_ms"] = int(self.duration_ms)
+        if self.align:
+            data["align"] = self.align
+        if self.valign:
+            data["valign"] = self.valign
+        if self.bold:
+            data["bold"] = True
+        if self.italic:
+            data["italic"] = True
+        if self.underline:
+            data["underline"] = True
+        if self.color:
+            data["color"] = self.color
         return data
 
     @classmethod
@@ -126,12 +148,21 @@ class LyricLine:
             units = tuple(LyricUnit.from_dict(item) for item in raw_units if isinstance(item, dict))
         else:
             units = _build_plain_units(text)
+        align = str(data["align"]).upper() if data.get("align") else None
+        valign = str(data["valign"]).upper() if data.get("valign") else None
+        color = str(data["color"]) if data.get("color") else None
         return cls(
             index=int(data.get("index", fallback_index)),
             text=text,
             start_ms=max(0, int(data.get("start_ms", 0))),
             duration_ms=duration_ms,
             units=units,
+            align=align,
+            valign=valign,
+            bold=bool(data.get("bold", False)),
+            italic=bool(data.get("italic", False)),
+            underline=bool(data.get("underline", False)),
+            color=color,
         )
 
 
@@ -241,6 +272,10 @@ class LyricDocument:
     def is_yrc(self):
         return self.source_format.upper() == "YRC"
 
+    @property
+    def is_srt(self):
+        return self.source_format.upper() == "SRT"
+
     def to_entries(self):
         """Return legacy-compatible (seconds, lyric) tuples for layout helpers."""
         return [(line.start_seconds, line.text) for line in self.lines]
@@ -274,6 +309,12 @@ class LyricDocument:
                 start_ms=line.start_ms,
                 duration_ms=line.duration_ms,
                 units=line.units,
+                align=line.align,
+                valign=line.valign,
+                bold=line.bold,
+                italic=line.italic,
+                underline=line.underline,
+                color=line.color,
             )
             for i, line in enumerate(parsed_lines)
         )
@@ -347,6 +388,48 @@ class LyricDocument:
         )
 
     @classmethod
+    def from_srt_entries(cls, cues, source_path="", revision=None):
+        valid_cues = [
+            item
+            for item in (cues or ())
+            if isinstance(item, dict) and str(item.get("text", "")).strip()
+        ]
+        valid_cues.sort(key=lambda item: int(item.get("start_ms", 0)))
+        lines = []
+        for i, item in enumerate(valid_cues):
+            text = str(item.get("text", ""))
+            start_ms = max(0, int(item.get("start_ms", 0)))
+            dur_raw = item.get("duration_ms")
+            if dur_raw is None and item.get("end_ms") is not None:
+                dur_raw = max(0, int(item["end_ms"]) - start_ms)
+            duration_ms = max(0, int(dur_raw)) if dur_raw is not None else None
+            align = str(item["align"]).upper() if item.get("align") else None
+            valign = str(item["valign"]).upper() if item.get("valign") else None
+            color = str(item["color"]) if item.get("color") else None
+            lines.append(
+                LyricLine(
+                    index=i,
+                    text=text,
+                    start_ms=start_ms,
+                    duration_ms=duration_ms,
+                    units=_build_plain_units(text),
+                    align=align,
+                    valign=valign,
+                    bold=bool(item.get("bold", False)),
+                    italic=bool(item.get("italic", False)),
+                    underline=bool(item.get("underline", False)),
+                    color=color,
+                )
+            )
+        return cls(
+            source_path=str(source_path),
+            source_format="SRT",
+            file_offset_ms=0,
+            lines=tuple(lines),
+            revision=str(revision) if revision else _new_revision(),
+        )
+
+    @classmethod
     def from_legacy_scene(cls, scene):
         raw_entries = scene.get("lyric_pv_entries", "")
         if not raw_entries:
@@ -388,9 +471,11 @@ class LyricDocument:
             start_seconds = max(0.0, line.start_seconds + offset)
             frame_in = base_frame + round(start_seconds * safe_fps)
             next_start_frame = None
-            if idx + 1 < line_count:
-                next_seconds = max(0.0, self.lines[idx + 1].start_seconds + offset)
-                next_start_frame = base_frame + round(next_seconds * safe_fps)
+            for next_idx in range(idx + 1, line_count):
+                if self.lines[next_idx].start_ms > line.start_ms:
+                    next_seconds = max(0.0, self.lines[next_idx].start_seconds + offset)
+                    next_start_frame = base_frame + round(next_seconds * safe_fps)
+                    break
 
             if line.duration_ms is not None and line.duration_ms > 0:
                 sing_end_seconds = max(start_seconds + 0.05, (line.start_ms + line.duration_ms) / 1000.0 + offset)

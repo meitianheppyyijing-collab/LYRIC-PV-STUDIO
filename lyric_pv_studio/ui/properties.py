@@ -21,15 +21,9 @@ from .callbacks import (
 
 
 class LYRICPV_Properties(PropertyGroup):
-    lrc_path: StringProperty(
-        name="LRC 文件",
-        description="选择要导入的 .lrc 歌词文件",
-        subtype="FILE_PATH",
-        default="",
-    )
-    yrc_path: StringProperty(
-        name="YRC 文件",
-        description="选择要导入的 .yrc 逐字时间歌词文件",
+    lyric_path: StringProperty(
+        name="歌词/字幕文件",
+        description="选择要导入的 .lrc、.yrc 或 .srt 文件（自动识别格式）",
         subtype="FILE_PATH",
         default="",
     )

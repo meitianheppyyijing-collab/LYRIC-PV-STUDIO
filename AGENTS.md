@@ -7,7 +7,7 @@ Blender 5.2+ 歌词 PV 插件 **LYRIC PV STUDIO** 的仓库地图与协作约定
 - `__init__.py`：插件元数据（`bl_info`）、类注册，以及 `frame_change_post` / `load_post` 处理器挂载与注销。
 - `constants.py`：全局常量——集合名 `PV_ROOT_NAME`、归属标记 `PV_TAG`、版本号 `PV_VERSION`、排版与动画枚举。
 - `core/`（核心算法；除 `spatial.py` 外保持零 `bpy` 依赖，便于脱离 Blender 单测）
-  - `core/parser.py`：LRC/YRC 文件读取与正则解析、中英文显示单元断词、字宽步进估算。
+  - `core/parser.py`：LRC/YRC/SRT 文件读取、格式识别与正则解析、中英文显示单元断词、字宽步进估算。
   - `core/document.py`：`LyricDocument`/`LyricLine`/`LyricUnit` 模型、派生帧缓存（`get_timeline`）、`scene["lyric_pv_document"]` 单源持久化与版本校验内存缓存（兼容旧工程与 Undo）。
   - `core/layout.py`：按时间间隔分段、随机排版/动画权重抽样、`scene["lyric_pv_layouts"]` 读写与重抽。
   - `core/spatial.py`：摄像机视锥边界、安全框缩放、人物深度遮挡距离与二维避让（依赖 `bpy`/`mathutils`）。
@@ -19,7 +19,7 @@ Blender 5.2+ 歌词 PV 插件 **LYRIC PV STUDIO** 的仓库地图与协作约定
   - `blender/materials.py`：基于 `Principled BSDF` 的共享发光字幕材质创建与复用。
 - `ui/`
   - `ui/properties.py`：挂在 `Scene.lyric_pv_props` 上的全部参数定义（`LYRICPV_Properties`）。
-  - `ui/operators.py`：导入 LRC/YRC、生成歌词 PV、全量/单句重抽、锁定/解锁、彻底清理等操作符。
+  - `ui/operators.py`：统一导入 LRC/YRC/SRT、生成歌词 PV、全量/单句重抽、锁定/解锁、彻底清理等操作符。
   - `ui/callbacks.py`：视口显隐、字号、摄像机距离/位置与入场速度变化时的实时联动回调。
   - `ui/panels.py`：3D 视图侧边栏（N 面板）「歌词PV」界面绘制。
 
