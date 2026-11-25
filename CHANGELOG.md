@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### 新增与优化
+- 新增 SRT 字幕格式支持与统一文件导入入口：
+  - 将侧边栏导入入口合并为统一文件选择框与「导入歌词 / 字幕」按钮，按 `.lrc` / `.yrc` / `.srt` 扩展名自动识别格式。
+  - 新增 `parse_srt_text` 解析器与 `LyricDocument.from_srt_entries`：支持多行字幕、HTML（`<i>`/`<b>`/`<u>`/`<font color>`/`<br>`）及 ASS 覆写标签（`{\an1..9}`/`{\a1..11}`/`\b`/`\i`/`\u`/`\c`），保留格式化对齐/位置/颜色/样式排版；同一开始时间的多条普通字幕自动按换行合并。
+  - SRT 退场帧与 YRC 一致，按 `min(下一句开始帧, 结束时间帧 + fade_frames)` 计算，并在同时刻存在不同定位字幕时自动避开 1 帧压缩；逐字排版模式同步支持多行换行显示。
 - 新增统一歌词缓存模型与场景存储层（`lyric_pv_studio/core/document.py`）：
   - 通过 `LyricDocument`、`LyricLine`、`LyricUnit` 在导入时一次性完成歌词解析、显示单元切分与 YRC 逐字时间聚合，避免重复解析与按文本反查配对。
   - 引入基于场景标识与版本号（`lyric_pv_doc_rev`）的内存缓存，消除侧边栏 UI 每次重绘时的重复 `json.loads` 开销，并自动适配 Blender Undo/Redo 与 `.blend` 工程切换（`load_post` 自动清理缓存）。

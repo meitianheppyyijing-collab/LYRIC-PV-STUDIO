@@ -17,24 +17,19 @@ class LYRICPV_PT_main(Panel):
         scene = context.scene
         props = scene.lyric_pv_props
 
-        layout.label(text="歌词项目")
-        lrc_box = layout.box()
-        lrc_box.label(text="普通歌词（整句时间）")
-        lrc_box.prop(props, "lrc_path", text="LRC 文件")
-        lrc_box.operator("lyric_pv.import_lrc", text="导入 LRC", icon="FILE_TEXT")
-
-        yrc_box = layout.box()
-        yrc_box.label(text="逐字歌词（保留字级时间）")
-        yrc_box.prop(props, "yrc_path", text="YRC 文件")
-        yrc_box.operator("lyric_pv.import_yrc", text="导入 YRC", icon="FILE_TEXT")
+        layout.label(text="歌词 / 字幕项目")
+        import_box = layout.box()
+        import_box.label(text="支持 LRC / YRC / SRT（自动识别）")
+        import_box.prop(props, "lyric_path", text="文件")
+        import_box.operator("lyric_pv.import_lyric", text="导入歌词 / 字幕", icon="FILE_TEXT")
 
         doc = get_lyric_document(scene)
         loaded_count = doc.line_count if doc else 0
 
         if loaded_count:
-            layout.label(text=f"已导入歌词：{loaded_count} 句")
+            layout.label(text=f"已导入 {doc.source_format}：{loaded_count} 句")
         else:
-            layout.label(text="尚未导入歌词")
+            layout.label(text="尚未导入歌词或字幕")
 
         layout.separator()
         layout.label(text="场景识别")

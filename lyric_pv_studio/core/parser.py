@@ -1,6 +1,50 @@
-"""Lyric text parsing and typography unit calculation."""
+"""Lyric and subtitle text parsing and typography unit calculation."""
 
+import html
+import os
 import re
+
+_SRT_NAMED_COLORS = {
+    "white": "#FFFFFF",
+    "black": "#000000",
+    "red": "#FF0000",
+    "green": "#00FF00",
+    "blue": "#0000FF",
+    "yellow": "#FFFF00",
+    "cyan": "#00FFFF",
+    "aqua": "#00FFFF",
+    "magenta": "#FF00FF",
+    "fuchsia": "#FF00FF",
+    "orange": "#FFA500",
+    "pink": "#FFC0CB",
+    "gray": "#808080",
+    "grey": "#808080",
+}
+
+_SRT_TIMESTAMP_RE = re.compile(
+    r"^\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*"
+    r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})(?:\s+.*)?$"
+)
+_SRT_HTML_BR_RE = re.compile(r"<br\s*/?>", re.I)
+_SRT_HTML_TAG_RE = re.compile(r"</?(?:i|b|u|s|em|strong|font|span|div|p|ruby|rt|rp)\b[^>]*>", re.I)
+_SRT_FONT_COLOR_RE = re.compile(r"<font\b[^>]*\bcolor\s*=\s*['\"]?([^'\"\s>]+)['\"]?", re.I)
+_SRT_ASS_BLOCK_RE = re.compile(r"\{\\[^}]*\}")
+_SRT_ASS_AN_RE = re.compile(r"\\an([1-9])")
+_SRT_ASS_A_RE = re.compile(r"\\a(10|11|[1-9])(?!\d)")
+_SRT_ASS_COLOR_RE = re.compile(r"\\(?:1?c)&H([0-9A-Fa-f]{6})&")
+_SRT_ASS_BOLD_RE = re.compile(r"\\b(\d+)")
+_SRT_ASS_ITALIC_RE = re.compile(r"\\i([01])")
+_SRT_ASS_UNDERLINE_RE = re.compile(r"\\u([01])")
+
+
+def detect_lyric_format(path):
+    """Detect supported lyric/subtitle format from file extension."""
+    ext = os.path.splitext(str(path or ""))[1].lower()
+    return {
+        ".lrc": "LRC",
+        ".yrc": "YRC",
+        ".srt": "SRT",
+    }.get(ext)
 
 
 def read_lyric_file(path):
@@ -90,6 +134,178 @@ def parse_yrc_text(text):
     return sentences, detailed
 
 
+def _srt_time_to_ms(hours, minutes, seconds, fraction):
+    frac = str(fraction or "0")
+    if len(frac) == 1:
+        ms = int(frac) * 100
+    elif len(frac) == 2:
+        ms = int(frac) * 10
+    else:
+        ms = int(frac[:3])
+    return ((int(hours) * 60 + int(minutes)) * 60 + int(seconds)) * 1000 + ms
+
+
+def _normalize_srt_color(raw_color):
+    value = str(raw_color or "").strip().lower()
+    if not value:
+        return None
+    if value in _SRT_NAMED_COLORS:
+        return _SRT_NAMED_COLORS[value]
+    if value.startswith("#"):
+        value = value[1:]
+    if len(value) == 3 and all(ch in "0123456789abcdef" for ch in value):
+        value = "".join(ch * 2 for ch in value)
+    if len(value) == 6 and all(ch in "0123456789abcdef" for ch in value):
+        return f"#{value.upper()}"
+    return None
+
+
+def _parse_srt_formatting(raw_text):
+    """Extract SRT/ASS inline formatting metadata and return cleaned display text."""
+    align = None
+    valign = None
+    bold = False
+    italic = False
+    underline = False
+    color = None
+
+    for block in _SRT_ASS_BLOCK_RE.findall(raw_text):
+        an_match = _SRT_ASS_AN_RE.search(block)
+        if an_match:
+            code = int(an_match.group(1))
+            align = ("LEFT", "CENTER", "RIGHT")[(code - 1) % 3]
+            valign = ("BOTTOM", "MIDDLE", "TOP")[(code - 1) // 3]
+        else:
+            a_match = _SRT_ASS_A_RE.search(block)
+            if a_match:
+                code = int(a_match.group(1))
+                align = {
+                    1: "LEFT", 5: "LEFT", 9: "LEFT",
+                    2: "CENTER", 6: "CENTER", 10: "CENTER",
+                    3: "RIGHT", 7: "RIGHT", 11: "RIGHT",
+                }.get(code, align)
+                valign = {
+                    1: "BOTTOM", 2: "BOTTOM", 3: "BOTTOM",
+                    5: "TOP", 6: "TOP", 7: "TOP",
+                    9: "MIDDLE", 10: "MIDDLE", 11: "MIDDLE",
+                }.get(code, valign)
+        color_match = _SRT_ASS_COLOR_RE.search(block)
+        if color_match:
+            bgr = color_match.group(1)
+            color = f"#{bgr[4:6]}{bgr[2:4]}{bgr[0:2]}".upper()
+        bold_match = _SRT_ASS_BOLD_RE.search(block)
+        if bold_match and int(bold_match.group(1)) > 0:
+            bold = True
+        italic_match = _SRT_ASS_ITALIC_RE.search(block)
+        if italic_match and italic_match.group(1) == "1":
+            italic = True
+        underline_match = _SRT_ASS_UNDERLINE_RE.search(block)
+        if underline_match and underline_match.group(1) == "1":
+            underline = True
+
+    if re.search(r"<(?:b|strong)\b[^>]*>", raw_text, re.I):
+        bold = True
+    if re.search(r"<(?:i|em)\b[^>]*>", raw_text, re.I):
+        italic = True
+    if re.search(r"<u\b[^>]*>", raw_text, re.I):
+        underline = True
+    font_color_match = _SRT_FONT_COLOR_RE.search(raw_text)
+    if font_color_match and color is None:
+        color = _normalize_srt_color(font_color_match.group(1))
+
+    cleaned = _SRT_HTML_BR_RE.sub("\n", raw_text)
+    cleaned = cleaned.replace("\\N", "\n")
+    cleaned = _SRT_ASS_BLOCK_RE.sub("", cleaned)
+    cleaned = _SRT_HTML_TAG_RE.sub("", cleaned)
+    cleaned = html.unescape(cleaned)
+    cleaned_lines = [line.strip() for line in cleaned.splitlines()]
+    cleaned_lines = [line for line in cleaned_lines if line]
+    text = "\n".join(cleaned_lines)
+
+    return text, {
+        "align": align,
+        "valign": valign,
+        "bold": bold,
+        "italic": italic,
+        "underline": underline,
+        "color": color,
+    }
+
+
+def parse_srt_text(text):
+    """Parse SubRip (.srt) subtitle text into timed cue dicts.
+
+    Preserves explicit multi-line formatting and inline SRT/ASS styling
+    metadata, and merges simultaneous cues (same start_ms without conflicting
+    explicit placement) with line breaks.
+    """
+    raw_lines = text.replace("\ufeff", "").splitlines()
+    cues = []
+    i = 0
+    total_lines = len(raw_lines)
+    while i < total_lines:
+        match = _SRT_TIMESTAMP_RE.match(raw_lines[i])
+        if not match:
+            i += 1
+            continue
+        start_ms = _srt_time_to_ms(*match.group(1, 2, 3, 4))
+        end_ms = max(start_ms, _srt_time_to_ms(*match.group(5, 6, 7, 8)))
+        i += 1
+        payload = []
+        while i < total_lines:
+            current = raw_lines[i]
+            if not current.strip():
+                i += 1
+                break
+            if _SRT_TIMESTAMP_RE.match(current):
+                break
+            if (
+                current.strip().isdigit()
+                and i + 1 < total_lines
+                and _SRT_TIMESTAMP_RE.match(raw_lines[i + 1])
+            ):
+                i += 1
+                break
+            payload.append(current)
+            i += 1
+        cleaned_text, fmt = _parse_srt_formatting("\n".join(payload))
+        if not cleaned_text:
+            continue
+        cues.append(
+            {
+                "start_ms": start_ms,
+                "end_ms": end_ms,
+                "duration_ms": max(0, end_ms - start_ms),
+                "text": cleaned_text,
+                **fmt,
+            }
+        )
+
+    cues.sort(key=lambda item: item["start_ms"])
+
+    merged = []
+    for cue in cues:
+        if (
+            merged
+            and merged[-1]["start_ms"] == cue["start_ms"]
+            and merged[-1]["align"] == cue["align"]
+            and merged[-1]["valign"] == cue["valign"]
+        ):
+            prev = merged[-1]
+            prev["text"] = f"{prev['text']}\n{cue['text']}"
+            prev["end_ms"] = max(prev["end_ms"], cue["end_ms"])
+            prev["duration_ms"] = max(0, prev["end_ms"] - prev["start_ms"])
+            prev["bold"] = prev["bold"] or cue["bold"]
+            prev["italic"] = prev["italic"] or cue["italic"]
+            prev["underline"] = prev["underline"] or cue["underline"]
+            if prev["color"] is None:
+                prev["color"] = cue["color"]
+        else:
+            merged.append(cue)
+
+    return merged
+
+
 def yrc_character_frame_map(timed_entry, fps, start_frame, time_offset=0.0):
     """Expand YRC token timings to one frame start per displayed character."""
     result = []
@@ -134,14 +350,18 @@ def estimate_lyric_unit_advance(text, base_size):
 
 
 def lyric_display_units(text):
-    """Group Latin words while preserving spaces and CJK per-character units."""
+    """Group Latin words while preserving newlines, spaces, and CJK per-character units."""
     units = []
     i = 0
     while i < len(text):
         ch = text[i]
+        if ch == "\n":
+            units.append(("\n", i))
+            i += 1
+            continue
         if ch.isspace():
             j = i + 1
-            while j < len(text) and text[j].isspace():
+            while j < len(text) and text[j].isspace() and text[j] != "\n":
                 j += 1
             units.append((text[i:j], i))
             i = j

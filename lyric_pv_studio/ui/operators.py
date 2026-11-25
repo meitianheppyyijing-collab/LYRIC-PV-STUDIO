@@ -25,8 +25,10 @@ from ..core.document import (
 )
 from ..core.layout import load_layout_records, reroll_layout_records
 from ..core.parser import (
+    detect_lyric_format,
     estimate_lyric_unit_advance,
     parse_lrc_text,
+    parse_srt_text,
     parse_yrc_text,
     read_lyric_file,
 )
@@ -38,62 +40,86 @@ from ..core.spatial import (
 )
 
 
-class LYRICPV_OT_import_lrc(Operator):
-    bl_idname = "lyric_pv.import_lrc"
-    bl_label = "导入 LRC"
-    bl_description = "单独导入普通 LRC 整句时间歌词"
+def _hex_to_rgba(hex_color):
+    raw = str(hex_color or "").lstrip("#")
+    if len(raw) != 6:
+        return (1.0, 1.0, 1.0, 1.0)
+    try:
+        return (
+            int(raw[0:2], 16) / 255.0,
+            int(raw[2:4], 16) / 255.0,
+            int(raw[4:6], 16) / 255.0,
+            1.0,
+        )
+    except ValueError:
+        return (1.0, 1.0, 1.0, 1.0)
+
+
+def _apply_font_formatting(curve, line):
+    if line.italic:
+        curve.shear = 0.2
+    if not (line.bold or line.italic or line.underline):
+        return
+    for char_fmt in getattr(curve, "body_format", ()):
+        if line.bold:
+            char_fmt.use_bold = True
+        if line.italic:
+            char_fmt.use_italic = True
+        if line.underline:
+            char_fmt.use_underline = True
+
+
+class LYRICPV_OT_import_lyric(Operator):
+    bl_idname = "lyric_pv.import_lyric"
+    bl_label = "导入歌词 / 字幕"
+    bl_description = "自动识别并导入 .lrc、.yrc 或 .srt 文件"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
         props = context.scene.lyric_pv_props
-        path = bpy.path.abspath(props.lrc_path)
-        if not path or not path.lower().endswith(".lrc"):
-            self.report({"ERROR"}, "请选择 .lrc 文件。")
+        path = bpy.path.abspath(props.lyric_path)
+        fmt = detect_lyric_format(path)
+        if not path or fmt is None:
+            self.report({"ERROR"}, "请选择 .lrc、.yrc 或 .srt 文件。")
             return {"CANCELLED"}
         try:
             content = read_lyric_file(path)
+        except Exception as exc:
+            self.report({"ERROR"}, f"无法读取 {fmt} 文件：{exc}")
+            return {"CANCELLED"}
+
+        scene = context.scene
+        if fmt == "LRC":
             entries, offset_ms = parse_lrc_text(content)
-        except Exception as exc:
-            self.report({"ERROR"}, f"无法读取 LRC 文件：{exc}")
-            return {"CANCELLED"}
-        if not entries:
-            self.report({"ERROR"}, "没有找到带时间戳的 LRC 歌词。")
-            return {"CANCELLED"}
-        scene = context.scene
-        doc = LyricDocument.from_lrc_entries(entries, source_path=path, file_offset_ms=offset_ms)
-        save_lyric_document(scene, doc)
-        props.generated_count = doc.line_count
-        self.report({"INFO"}, f"已导入 {doc.line_count} 句 LRC 歌词。")
-        return {"FINISHED"}
+            if not entries:
+                self.report({"ERROR"}, "没有找到带时间戳的 LRC 歌词。")
+                return {"CANCELLED"}
+            doc = LyricDocument.from_lrc_entries(entries, source_path=path, file_offset_ms=offset_ms)
+            save_lyric_document(scene, doc)
+            props.generated_count = doc.line_count
+            self.report({"INFO"}, f"已导入 {doc.line_count} 句 LRC 歌词。")
+            return {"FINISHED"}
 
-
-class LYRICPV_OT_import_yrc(Operator):
-    bl_idname = "lyric_pv.import_yrc"
-    bl_label = "导入 YRC"
-    bl_description = "导入 YRC 歌词并保留逐字时间信息"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        props = context.scene.lyric_pv_props
-        path = bpy.path.abspath(props.yrc_path)
-        if not path or not path.lower().endswith(".yrc"):
-            self.report({"ERROR"}, "请选择 .yrc 文件。")
-            return {"CANCELLED"}
-        try:
-            content = read_lyric_file(path)
+        if fmt == "YRC":
             entries, timed_entries = parse_yrc_text(content)
-        except Exception as exc:
-            self.report({"ERROR"}, f"无法读取 YRC 文件：{exc}")
+            if not entries:
+                self.report({"ERROR"}, "没有识别到此格式的 YRC 歌词。")
+                return {"CANCELLED"}
+            doc = LyricDocument.from_yrc_entries(entries, timed_entries, source_path=path)
+            save_lyric_document(scene, doc)
+            props.generated_count = doc.line_count
+            token_count = sum(len(item["tokens"]) for item in timed_entries)
+            self.report({"INFO"}, f"已导入 {doc.line_count} 句 YRC 歌词，保留 {token_count} 段逐字时间。")
+            return {"FINISHED"}
+
+        cues = parse_srt_text(content)
+        if not cues:
+            self.report({"ERROR"}, "没有找到带时间轴的 SRT 字幕。")
             return {"CANCELLED"}
-        if not entries:
-            self.report({"ERROR"}, "没有识别到此格式的 YRC 歌词。")
-            return {"CANCELLED"}
-        scene = context.scene
-        doc = LyricDocument.from_yrc_entries(entries, timed_entries, source_path=path)
+        doc = LyricDocument.from_srt_entries(cues, source_path=path)
         save_lyric_document(scene, doc)
         props.generated_count = doc.line_count
-        token_count = sum(len(item["tokens"]) for item in timed_entries)
-        self.report({"INFO"}, f"已导入 {doc.line_count} 句 YRC 歌词，保留 {token_count} 段逐字时间。")
+        self.report({"INFO"}, f"已导入 {doc.line_count} 条 SRT 字幕。")
         return {"FINISHED"}
 
 
@@ -108,7 +134,7 @@ class LYRICPV_OT_generate(Operator):
         props = scene.lyric_pv_props
         doc = get_lyric_document(scene)
         if doc is None or not doc.lines:
-            self.report({"ERROR"}, "请先导入 LRC 或 YRC 歌词文件。")
+            self.report({"ERROR"}, "请先导入 LRC、YRC 或 SRT 文件。")
             return {"CANCELLED"}
         camera = props.target_camera or scene.camera
         if camera is None or camera.type != "CAMERA" or camera.name not in scene.objects:
@@ -122,6 +148,7 @@ class LYRICPV_OT_generate(Operator):
         remove_legacy_generated_background()
         collection = get_or_create_collection(scene)
         material = make_text_material("LPV_Text_Material", props.text_color, props.glow_strength)
+        color_materials = {}
 
         glitch_mats = {}
         if props.glitch_enabled:
@@ -172,16 +199,17 @@ class LYRICPV_OT_generate(Operator):
             frame_out = timing.frame_out
             fade = timing.fade_frames
             style = record["style"]
+            has_explicit_placement = line.has_explicit_placement
+            is_multiline = "\n" in lyric
             center_aligned_styles = {"CLEAN_CENTER", "VERTICAL", "DIAGONAL", "WIDE_SPACING", "PER_CHARACTER", "EMPHASIS"}
             if props.layout_alignment == "CENTER" and style in center_aligned_styles:
                 record = dict(record)
                 record["x"] = 0.0
                 record["rotation"] = 0.0
             # PV-style placement: each lyric line gets a deterministic, varied
-            # camera-local position. Keep a generous safe margin; final text-fit
-            # and character-occlusion checks below still clamp/nudge the result.
-            # This applies identically to LRC and YRC because both use this generator.
-            if props.random_layout_enabled:
+            # camera-local position unless explicit subtitle placement formatting
+            # (e.g. SRT {\an1..9}) dictates where the cue belongs.
+            if props.random_layout_enabled and not has_explicit_placement:
                 record = dict(record)
                 pos_rng = random.Random(int(props.random_seed) + index * 104729 + 31)
                 # Avoid repeatedly pinning every line to the exact screen centre.
@@ -192,10 +220,25 @@ class LYRICPV_OT_generate(Operator):
                 # Small per-line variation makes consecutive lines feel less templated.
                 record["x"] += pos_rng.uniform(-0.035, 0.035) * frame_width
                 record["y"] += pos_rng.uniform(-0.025, 0.025) * frame_height
+            if has_explicit_placement:
+                record = dict(record)
+                record["rotation"] = 0.0
+                if line.align == "LEFT":
+                    record["x"] = -frame_width * 0.34
+                elif line.align == "RIGHT":
+                    record["x"] = frame_width * 0.34
+                elif line.align == "CENTER":
+                    record["x"] = 0.0
+                if line.valign == "TOP":
+                    record["y"] = frame_height * 0.30
+                elif line.valign == "MIDDLE":
+                    record["y"] = 0.0
+                elif line.valign == "BOTTOM":
+                    record["y"] = -frame_height * 0.30
             # 副歌/段落位置交替（可选）：position_cycle > 0 时每 N 句上下交替
             cycle = int(props.position_cycle)
             extra_y = 0.0
-            if cycle > 0 and (index // cycle) % 2 == 1:
+            if cycle > 0 and not has_explicit_placement and (index // cycle) % 2 == 1:
                 extra_y += float(props.chorus_y_offset)
             multiplier = float(record["font_multiplier"])
             base_size = float(props.font_size) * multiplier
@@ -203,10 +246,17 @@ class LYRICPV_OT_generate(Operator):
             direction = "NONE" if record["animation"] == "FADE" else record["entrance"]
             reveal_enabled = bool(props.character_pop or record["animation"] in {"POP", "FADE"})
             pop_motion = bool(props.character_pop or record["animation"] == "POP")
-            # LRC and YRC share the same layout/animation controls. YRC timing
-            # only drives per-character reveal when the selected layout is per-character;
-            # ordinary layouts keep the entire sentence in one FONT object.
-            per_char = style in {"PER_CHARACTER", "EMPHASIS"}
+            line_material = material
+            if line.color:
+                if line.color not in color_materials:
+                    mat_name = f"LPV_Text_Mat_{line.color.lstrip('#')}"
+                    color_materials[line.color] = make_text_material(
+                        mat_name, _hex_to_rgba(line.color), props.glow_strength
+                    )
+                line_material = color_materials[line.color]
+            # LRC, YRC, and SRT share the same layout/animation controls.
+            # Formatted SRT cues with explicit placement keep single-object layout.
+            per_char = (style in {"PER_CHARACTER", "EMPHASIS"}) and not has_explicit_placement
             unit_frames = timing.unit_frames
             glyphs = []
             line_fit = 1.0
@@ -227,8 +277,12 @@ class LYRICPV_OT_generate(Operator):
                 sentence_group[PV_TAG] = True
                 sentence_group["lyric_sentence_group"] = True
                 sentence_group["lyric_index"] = index
-                # Create all glyph objects first, then evaluate the view layer once.
+                # Create all glyph objects grouped by explicit line breaks, then evaluate once.
+                row_glyphs = [[]]
                 for ci, unit in enumerate(display_units):
+                    if unit.text == "\n":
+                        row_glyphs.append([])
+                        continue
                     cu = bpy.data.curves.new(f"LPV_Lyric_{index+1:03d}_{ci+1:03d}_Curve", type="FONT")
                     cu.body = unit.text if unit.text.strip() else " "
                     cu.size = base_size
@@ -239,71 +293,95 @@ class LYRICPV_OT_generate(Operator):
                     cu.space_character = effective_spacing
                     if font:
                         cu.font = font
+                    _apply_font_formatting(cu, line)
                     ob = bpy.data.objects.new(f"LPV_Lyric_{index+1:03d}_Glyph_{ci+1:03d}", cu)
                     collection.objects.link(ob)
                     ob.parent = sentence_group
-                    ob.data.materials.append(material)
+                    ob.data.materials.append(line_material)
                     ob[PV_TAG] = True
-                    glyphs.append((ob, 0.0, ci, 0.0))
+                    row_glyphs[-1].append((ob, 0.0, ci, 0.0))
+                row_glyphs = [row for row in row_glyphs if row]
                 bpy.context.view_layer.update()
-                cursor = 0.0
-                measured_glyphs = []
                 depsgraph = context.evaluated_depsgraph_get()
-                for ob, _cursor_x, ci, _width in glyphs:
-                    unit = display_units[ci]
-                    unit_text = unit.text
-                    try:
-                        evaluated = ob.evaluated_get(depsgraph)
-                        measured_width = float(evaluated.dimensions.x)
-                    except Exception:
-                        measured_width = 0.0
-                    estimated_width = estimate_lyric_unit_advance(unit_text, base_size)
-                    minimum_width = estimated_width * 0.72
-                    width = measured_width if measured_width >= minimum_width else estimated_width
-                    width = max(width, base_size * 0.18)
-                    measured_glyphs.append((ob, cursor, ci, width, unit.char_index))
-                    lrc_emphasis_scale = 1.35 if source_format == "LRC" and style == "EMPHASIS" and ci == 0 else 1.0
-                    advance_width = width * lrc_emphasis_scale
-                    gap = max(base_size * 0.075, advance_width * 0.10) * effective_spacing
-                    current_is_space = unit.is_space
-                    next_is_space = (ci + 1 < len(display_units) and display_units[ci + 1].is_space)
-                    has_space = current_is_space or next_is_space
-                    cursor += advance_width + (gap if ci < len(display_units) - 1 and not has_space else 0.0)
-                glyphs = measured_glyphs
-                total_width = cursor
+                first_glyph_ci = row_glyphs[0][0][2] if row_glyphs else 0
+                measured_rows = []
+                for row in row_glyphs:
+                    cursor = 0.0
+                    row_measured = []
+                    for row_pos, (ob, _cursor_x, ci, _width) in enumerate(row):
+                        unit = display_units[ci]
+                        unit_text = unit.text
+                        try:
+                            evaluated = ob.evaluated_get(depsgraph)
+                            measured_width = float(evaluated.dimensions.x)
+                        except Exception:
+                            measured_width = 0.0
+                        estimated_width = estimate_lyric_unit_advance(unit_text, base_size)
+                        minimum_width = estimated_width * 0.72
+                        width = measured_width if measured_width >= minimum_width else estimated_width
+                        width = max(width, base_size * 0.18)
+                        row_measured.append((ob, cursor, ci, width, unit.char_index))
+                        emphasis_scale = 1.35 if source_format != "YRC" and style == "EMPHASIS" and ci == first_glyph_ci else 1.0
+                        advance_width = width * emphasis_scale
+                        gap = max(base_size * 0.075, advance_width * 0.10) * effective_spacing
+                        current_is_space = unit.is_space
+                        next_is_space = (row_pos + 1 < len(row) and display_units[row[row_pos + 1][2]].is_space)
+                        has_space = current_is_space or next_is_space
+                        cursor += advance_width + (gap if row_pos < len(row) - 1 and not has_space else 0.0)
+                    measured_rows.append((row_measured, cursor))
+                total_width = max((row_w for _, row_w in measured_rows), default=base_size)
+                line_height = base_size * 1.25
+                num_rows = max(1, len(measured_rows))
+                total_height = max(base_size, line_height * num_rows)
                 animation_peak = 1.18 if record.get("animation") in {"POP", "BOUNCE"} else 1.04 if record.get("animation") == "GLITCH" else 1.0
                 emphasis_peak = 1.35 if style == "EMPHASIS" else 1.0
                 peak_scale = animation_peak * emphasis_peak
-                fit = min(1.0, (frame_width * 0.84) / (max(total_width, 1e-6) * peak_scale), (frame_height * 0.76) / (max(base_size, 1e-6) * peak_scale))
+                fit = min(
+                    1.0,
+                    (frame_width * 0.84) / (max(total_width, 1e-6) * peak_scale),
+                    (frame_height * 0.76) / (max(total_height, 1e-6) * peak_scale),
+                )
                 line_fit = fit
-                start_x = -total_width * fit * 0.5
-                for ob, cursor_x, ci, width, source_char_index in glyphs:
-                    bx = start_x + cursor_x * fit
-                    scale_factor = 1.35 if style == "EMPHASIS" and ci == 0 else 1.0
-                    ob.scale = (fit * scale_factor, fit * scale_factor, fit * scale_factor)
-                    ob.location = (bx, 0.0, 0.0)
-                    ob.rotation_euler.z = math.radians(float(record["rotation"]))
-                    ob["lyric_font_multiplier"] = multiplier
-                    ob["lyric_index"] = index
-                    ob["lyric_text"] = lyric
-                    if unit_frames and ci < len(unit_frames):
-                        char_frame_in = unit_frames[ci].frame_in
-                        char_frame_out = unit_frames[ci].frame_out
+                row_align = line.align or props.layout_alignment
+                placed_glyphs = []
+                reveal_order = 0
+                for row_idx, (row_measured, row_width) in enumerate(measured_rows):
+                    if row_align == "LEFT":
+                        row_start_x = -total_width * fit * 0.5
+                    elif row_align == "RIGHT":
+                        row_start_x = total_width * fit * 0.5 - row_width * fit
                     else:
-                        char_frame_in = int(frame_in + (ci * props.character_stagger if reveal_enabled else 0))
-                        char_frame_out = frame_out
-                    ob["lyric_character_frame_in"] = char_frame_in
-                    ob["lyric_character_frame_out"] = char_frame_out
-                    char_start = int(char_frame_in)
-                    key_glyph_reveal(
-                        ob,
-                        char_start,
-                        pop_y=-base_size * 0.22 if pop_motion else 0.0,
-                        pop_z=props.spatial_depth if pop_motion else 0.0,
-                        pop_frames=max(2, fade),
-                    )
-                    apply_text_animation(ob, record, char_start, frame_out, props, random.Random(int(props.random_seed) + index * 997 + ci))
-                    created += 1
+                        row_start_x = -row_width * fit * 0.5
+                    row_y = ((num_rows - 1) * 0.5 - row_idx) * line_height * fit
+                    for ob, cursor_x, ci, width, source_char_index in row_measured:
+                        bx = row_start_x + cursor_x * fit
+                        scale_factor = 1.35 if style == "EMPHASIS" and ci == first_glyph_ci else 1.0
+                        ob.scale = (fit * scale_factor, fit * scale_factor, fit * scale_factor)
+                        ob.location = (bx, row_y, 0.0)
+                        ob.rotation_euler.z = math.radians(float(record["rotation"]))
+                        ob["lyric_font_multiplier"] = multiplier
+                        ob["lyric_index"] = index
+                        ob["lyric_text"] = lyric
+                        if unit_frames and ci < len(unit_frames):
+                            char_frame_in = unit_frames[ci].frame_in
+                            char_frame_out = unit_frames[ci].frame_out
+                        else:
+                            char_frame_in = int(frame_in + (reveal_order * props.character_stagger if reveal_enabled else 0))
+                            char_frame_out = frame_out
+                        ob["lyric_character_frame_in"] = char_frame_in
+                        ob["lyric_character_frame_out"] = char_frame_out
+                        char_start = int(char_frame_in)
+                        key_glyph_reveal(
+                            ob,
+                            char_start,
+                            pop_y=-base_size * 0.22 if pop_motion else 0.0,
+                            pop_z=props.spatial_depth if pop_motion else 0.0,
+                            pop_frames=max(2, fade),
+                        )
+                        apply_text_animation(ob, record, char_start, frame_out, props, random.Random(int(props.random_seed) + index * 997 + ci))
+                        placed_glyphs.append((ob, bx, row_y, ci, width))
+                        reveal_order += 1
+                        created += 1
                 group_center_x = float(record["x"])
                 max_center_x = max(0.0, frame_width * 0.5 - total_width * fit * 0.5 - frame_width * 0.06)
                 group_center_x = max(-max_center_x, min(max_center_x, group_center_x))
@@ -312,17 +390,17 @@ class LYRICPV_OT_generate(Operator):
                     scene, camera, props,
                     min_x + frame_width * 0.5 + group_center_x,
                     min_y + frame_height * 0.5 + group_y,
-                    total_width * fit, base_size * fit, distance,
+                    total_width * fit, total_height * fit, distance,
                     (min_x, max_x, min_y, max_y),
                 )
                 group_center_x -= min_x + frame_width * 0.5
                 group_y -= min_y + frame_height * 0.5
                 sentence_group.location = (group_center_x, group_y, 0.0)
                 bound_w = total_width * fit
-                if style == "EMPHASIS" and source_format == "YRC" and glyphs:
-                    first_glyph_width = next((item[3] for item in glyphs if item[2] == 0), 0.0)
+                if style == "EMPHASIS" and source_format == "YRC" and placed_glyphs:
+                    first_glyph_width = next((item[4] for item in placed_glyphs if item[3] == first_glyph_ci), 0.0)
                     bound_w += first_glyph_width * fit * 0.35
-                bound_h = base_size * fit * (1.4 if style == "EMPHASIS" else 1.25)
+                bound_h = total_height * fit * (1.4 if style == "EMPHASIS" else 1.25)
                 angle = math.radians(float(record["rotation"]))
                 rotated_w = abs(bound_w * math.cos(angle)) + abs(bound_h * math.sin(angle))
                 rotated_h = abs(bound_w * math.sin(angle)) + abs(bound_h * math.cos(angle))
@@ -342,33 +420,37 @@ class LYRICPV_OT_generate(Operator):
                 sentence_group["lyric_fade_frames"] = int(fade)
                 sentence_group["lyric_pop_enabled"] = False
                 key_object_scale(sentence_group, frame_in, frame_out, fade, reveal_enabled)
-                for ob, cursor_x, ci, width, source_char_index in glyphs:
-                    ob.location.x = start_x + cursor_x * fit
-                    ob.location.y = 0.0
+                for ob, bx, row_y, _ci, _width in placed_glyphs:
+                    ob.location.x = bx
+                    ob.location.y = row_y
             else:
                 cu = bpy.data.curves.new(f"LPV_Lyric_{index+1:03d}_Curve", type="FONT")
                 cu.body = lyric
                 cu.size = base_size
-                cu.align_x = {
-                    "CLEAN_CENTER": "CENTER",
-                    "LEFT_TITLE": "LEFT",
-                    "RIGHT_TITLE": "RIGHT",
-                    "VERTICAL": "CENTER",
-                    "DIAGONAL": "CENTER",
-                    "WIDE_SPACING": "CENTER",
-                }.get(style, props.layout_alignment)
+                if line.align:
+                    cu.align_x = line.align
+                else:
+                    cu.align_x = {
+                        "CLEAN_CENTER": "CENTER",
+                        "LEFT_TITLE": "LEFT",
+                        "RIGHT_TITLE": "RIGHT",
+                        "VERTICAL": "CENTER",
+                        "DIAGONAL": "CENTER",
+                        "WIDE_SPACING": "CENTER",
+                    }.get(style, props.layout_alignment)
                 cu.align_y = "CENTER"
                 cu.extrude = props.text_extrude
                 cu.bevel_depth = props.text_bevel
                 cu.space_character = effective_spacing
-                if style == "VERTICAL":
+                if style == "VERTICAL" and not has_explicit_placement and not is_multiline:
                     cu.body = "\n".join(list(lyric))
                 if font:
                     cu.font = font
+                _apply_font_formatting(cu, line)
                 ob = bpy.data.objects.new(f"LPV_Lyric_{index+1:03d}_Line", cu)
                 collection.objects.link(ob)
                 ob.parent = controller
-                ob.data.materials.append(material)
+                ob.data.materials.append(line_material)
                 ob[PV_TAG] = True
                 ob["lyric_index"] = index
                 ob["lyric_text"] = lyric
@@ -376,8 +458,10 @@ class LYRICPV_OT_generate(Operator):
                 ob["lyric_base_x"] = float(record["x"])
                 ob["lyric_base_y"] = float(record["y"]) + extra_y
                 ob["lyric_base_z"] = 0.0
-                safe_x = max(-frame_width * 0.16, min(frame_width * 0.16, float(record["x"])))
-                safe_y = max(-frame_height * 0.16, min(frame_height * 0.16, float(record["y"]) + extra_y))
+                x_limit = frame_width * (0.38 if has_explicit_placement else 0.16)
+                y_limit = frame_height * (0.34 if has_explicit_placement else 0.16)
+                safe_x = max(-x_limit, min(x_limit, float(record["x"])))
+                safe_y = max(-y_limit, min(y_limit, float(record["y"]) + extra_y))
                 ob.location = (safe_x, safe_y, 0.0)
                 ob.rotation_euler.z = math.radians(float(record["rotation"]))
                 animation_peak = 1.18 if record.get("animation") in {"POP", "BOUNCE"} else 1.04 if record.get("animation") == "GLITCH" else 1.0
@@ -416,7 +500,7 @@ class LYRICPV_OT_generate(Operator):
                     gc = bpy.data.curves.new(f"LPV_Glitch_{index+1:03d}_{suffix}_Curve", type="FONT")
                     gc.body = lyric
                     gc.size = base_size
-                    gc.align_x = "CENTER"
+                    gc.align_x = line.align or "CENTER"
                     gc.align_y = "CENTER"
                     if font:
                         gc.font = font
@@ -527,15 +611,14 @@ class LYRICPV_OT_clear(Operator):
                 del scene[key]
                 cleared += 1
 
-        # Reset file selectors and visible counters as well.
-        props.lrc_path = ""
-        props.yrc_path = ""
+        # Reset file selector and visible counters as well.
+        props.lyric_path = ""
         props.generated_count = 0
 
         # Drop cached object references so a later generation cannot reuse stale data.
         invalidate_entrance_cache()
         if removed or legacy_background_removed or cleared:
-            self.report({"INFO"}, "已彻底清理：生成内容、LRC/YRC 歌词、逐字时间、排版记录和导入路径。")
+            self.report({"INFO"}, "已彻底清理：生成内容、LRC/YRC/SRT 数据、逐字时间、排版记录和导入路径。")
         else:
             self.report({"INFO"}, "歌词项目已经是空的，无需清理。")
         return {"FINISHED"}

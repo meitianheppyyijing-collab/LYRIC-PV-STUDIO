@@ -21,9 +21,11 @@ from lyric_pv_studio.core.layout import (
     _weighted_choice,
 )
 from lyric_pv_studio.core.parser import (
+    detect_lyric_format,
     estimate_lyric_unit_advance,
     lyric_display_units,
     parse_lrc_text,
+    parse_srt_text,
     parse_yrc_text,
     yrc_character_frame_map,
 )
@@ -63,6 +65,52 @@ class TestParser(unittest.TestCase):
         units = lyric_display_units("Can't stop 音乐!")
         texts = [u[0] for u in units]
         self.assertEqual(texts, ["Can't", " ", "stop", " ", "音", "乐", "!"])
+
+        multiline_units = lyric_display_units("Hello\n世界")
+        self.assertEqual([u[0] for u in multiline_units], ["Hello", "\n", "世", "界"])
+
+    def test_detect_lyric_format(self):
+        self.assertEqual(detect_lyric_format("song.lrc"), "LRC")
+        self.assertEqual(detect_lyric_format("SONG.YRC"), "YRC")
+        self.assertEqual(detect_lyric_format("/tmp/sub.SRT"), "SRT")
+        self.assertIsNone(detect_lyric_format("notes.txt"))
+
+    def test_parse_srt_formatting_and_simultaneous_merge(self):
+        srt_text = (
+            "\ufeff1\n"
+            "00:00:01,000 --> 00:00:03,500 X1:100 X2:500\n"
+            "{\\an8\\b1\\i1}<i>Top &amp; Bold</i><br/>Line two\n\n"
+            "2\n"
+            "00:00:01.000 --> 00:00:04.000\n"
+            "{\\an2}<font color=\"#ffcc00\">Bottom Yellow</font>\n\n"
+            "3\n"
+            "00:00:06,000 --> 00:00:08,000\n"
+            "English line\n\n"
+            "4\n"
+            "00:00:06,000 --> 00:00:09,000\n"
+            "<u>中文翻译</u>\n"
+        )
+        cues = parse_srt_text(srt_text)
+        # Cues 1 & 2 share start_ms=1000 but have distinct explicit placement (TOP vs BOTTOM).
+        # Cues 3 & 4 share start_ms=6000 with no conflicting placement -> merged with newline.
+        self.assertEqual(len(cues), 3)
+
+        self.assertEqual(cues[0]["start_ms"], 1000)
+        self.assertEqual(cues[0]["duration_ms"], 2500)
+        self.assertEqual(cues[0]["text"], "Top & Bold\nLine two")
+        self.assertEqual(cues[0]["align"], "CENTER")
+        self.assertEqual(cues[0]["valign"], "TOP")
+        self.assertTrue(cues[0]["bold"])
+        self.assertTrue(cues[0]["italic"])
+
+        self.assertEqual(cues[1]["align"], "CENTER")
+        self.assertEqual(cues[1]["valign"], "BOTTOM")
+        self.assertEqual(cues[1]["color"], "#FFCC00")
+
+        self.assertEqual(cues[2]["start_ms"], 6000)
+        self.assertEqual(cues[2]["duration_ms"], 3000)
+        self.assertEqual(cues[2]["text"], "English line\n中文翻译")
+        self.assertTrue(cues[2]["underline"])
 
     def test_estimate_advance(self):
         adv_cjk = estimate_lyric_unit_advance("字", 1.0)
@@ -217,6 +265,42 @@ class TestLyricDocumentCache(unittest.TestCase):
         self.assertIsNotNone(legacy_doc)
         self.assertEqual(legacy_doc.lines[0].text, "旧版歌词")
         self.assertIs(get_lyric_document(legacy_scene), legacy_doc)
+
+    def test_srt_document_roundtrip_and_timeline_tail(self):
+        srt_text = (
+            "1\n"
+            "00:00:01,000 --> 00:00:03,000\n"
+            "{\\an7}<font color=\"cyan\">左上角</font>\n\n"
+            "2\n"
+            "00:00:01,000 --> 00:00:03,000\n"
+            "{\\an3}右下角\n\n"
+            "3\n"
+            "00:00:03,100 --> 00:00:05,000\n"
+            "紧接下一句\n"
+        )
+        cues = parse_srt_text(srt_text)
+        doc = LyricDocument.from_srt_entries(cues, source_path="demo.srt")
+        self.assertTrue(doc.is_srt)
+        self.assertEqual(doc.line_count, 3)
+
+        restored = LyricDocument.from_dict(doc.to_dict(), revision=doc.revision)
+        self.assertEqual(restored.lines, doc.lines)
+        self.assertEqual(restored.lines[0].align, "LEFT")
+        self.assertEqual(restored.lines[0].valign, "TOP")
+        self.assertEqual(restored.lines[0].color, "#00FFFF")
+
+        # Line 0 & 1 both start at 1.0s (frame 25), end at 3.0s (frame 73);
+        # next strictly later line starts at 3.1s (frame 75), so both clamp cleanly to 75
+        # instead of collapsing to 1 frame against each other.
+        # Last line (3.1s..5.0s = frames 75..121) extends by fade_frames (8 -> 129).
+        timeline = doc.get_timeline(fps=24.0, start_frame=1, time_offset=0.0, hold_gap=3.0, fade_frames=8)
+        self.assertEqual(timeline[0].frame_in, 25)
+        self.assertEqual(timeline[0].frame_out, 75)
+        self.assertEqual(timeline[1].frame_in, 25)
+        self.assertEqual(timeline[1].frame_out, 75)
+        self.assertEqual(timeline[2].frame_in, 75)
+        self.assertEqual(timeline[2].sing_end_frame, 121)
+        self.assertEqual(timeline[2].frame_out, 129)
 
 
 if __name__ == "__main__":
