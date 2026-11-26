@@ -16,6 +16,7 @@ from .callbacks import (
     update_lyric_after_appearance,
     update_lyric_entrance_settings,
     update_lyric_font_size,
+    update_lyric_frame_offset,
     update_lyric_per_char_material,
     update_lyric_positions,
     update_lyric_stage_shaders,
@@ -201,13 +202,13 @@ class LYRICPV_Properties(PropertyGroup):
         min=0.1,
         max=30.0,
     )
-    time_offset: FloatProperty(
-        name="手动时间偏移",
-        description="整体调整歌词时间，单位为秒",
-        default=0.0,
-        min=-3600.0,
-        max=3600.0,
-        precision=3,
+    frame_offset: IntProperty(
+        name="手动帧偏移",
+        description="以 Blender 第 0 帧为起点整体平移歌词（单位：帧，正数延后，负数提前），实时同步几何节点与动画",
+        default=0,
+        min=-1000000,
+        max=1000000,
+        update=update_lyric_frame_offset,
     )
     text_color: FloatVectorProperty(
         name="字幕颜色",

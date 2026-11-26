@@ -454,14 +454,28 @@ class LyricDocument:
                 return cls.from_yrc_entries(entries, detailed, source_path=source_path)
         return cls.from_lrc_entries(entries, source_path=source_path, file_offset_ms=file_offset_ms)
 
-    def get_timeline(self, fps, start_frame, time_offset=0.0, hold_gap=3.0, fade_frames=8):
-        """Return cached frame timings for all lines and timed units."""
+    def get_timeline(
+        self,
+        fps,
+        start_frame=0,
+        frame_offset=0,
+        time_offset=0.0,
+        hold_gap=3.0,
+        fade_frames=8,
+    ):
+        """Return cached frame timings for all lines and timed units.
+
+        Timeline frames are anchored at ``start_frame`` (default: Blender frame 0)
+        and shifted linearly by ``frame_offset`` frames.
+        """
         safe_fps = max(1e-3, float(fps))
-        base_frame = int(start_frame)
+        anchor_frame = int(start_frame)
+        shift_frames = int(frame_offset)
+        base_frame = anchor_frame + shift_frames
         offset = float(time_offset)
         gap = max(0.05, float(hold_gap))
         fade_req = max(0, int(fade_frames))
-        key = (round(safe_fps, 4), base_frame, round(offset, 4), round(gap, 4), fade_req)
+        key = (round(safe_fps, 4), anchor_frame, shift_frames, round(offset, 4), round(gap, 4), fade_req)
         if self._timeline_key == key and self._timeline_cache is not None:
             return self._timeline_cache
 

@@ -10,11 +10,13 @@ DEFAULT_TEXT_DEPTH = 0.02
 DEFAULT_OUTLINE_THICKNESS = 0.0055
 DEFAULT_OUTLINE_Z_OFFSET = -0.0015
 DEFAULT_TRANSITION_FRAMES = 2.0
+DEFAULT_FRAME_OFFSET = 0.0
 
 SOCKET_PER_CHAR_MATERIAL = "Per-Char Material"
 SOCKET_CHAR_FRAME_IN = "Char Frame In"
 SOCKET_CHAR_FRAME_OUT = "Char Frame Out"
 SOCKET_TRANSITION_FRAMES = "Transition Frames"
+SOCKET_FRAME_OFFSET = "Frame Offset"
 SOCKET_OUTLINE_MATERIAL = "Outline Material"
 
 
@@ -89,18 +91,23 @@ def _build_lyric_solidify_tree(node_group, outline_material):
         frame_in_sock = node_group.interface.new_socket(
             name=SOCKET_CHAR_FRAME_IN, in_out="INPUT", socket_type="NodeSocketFloat"
         )
-        frame_in_sock.default_value = 1.0
+        frame_in_sock.default_value = 0.0
 
         frame_out_sock = node_group.interface.new_socket(
             name=SOCKET_CHAR_FRAME_OUT, in_out="INPUT", socket_type="NodeSocketFloat"
         )
-        frame_out_sock.default_value = 2.0
+        frame_out_sock.default_value = 1.0
 
         trans_sock = node_group.interface.new_socket(
             name=SOCKET_TRANSITION_FRAMES, in_out="INPUT", socket_type="NodeSocketFloat"
         )
         trans_sock.min_value = 0.0
         trans_sock.default_value = DEFAULT_TRANSITION_FRAMES
+
+        offset_sock = node_group.interface.new_socket(
+            name=SOCKET_FRAME_OFFSET, in_out="INPUT", socket_type="NodeSocketFloat"
+        )
+        offset_sock.default_value = DEFAULT_FRAME_OFFSET
 
     nodes = node_group.nodes
     links = node_group.links
@@ -160,7 +167,11 @@ def _build_lyric_solidify_tree(node_group, outline_material):
 
     # --- Per-character 3-state timing weights (Before -> Singing -> After) ---
     scene_time = nodes.new("GeometryNodeInputSceneTime")
-    scene_time.location = (40.0, 820.0)
+    scene_time.location = (-160.0, 820.0)
+
+    effective_frame = nodes.new("ShaderNodeMath")
+    effective_frame.location = (40.0, 820.0)
+    effective_frame.operation = "SUBTRACT"
 
     enter_start = nodes.new("ShaderNodeMath")
     enter_start.location = (40.0, 680.0)
@@ -319,10 +330,13 @@ def _build_lyric_solidify_tree(node_group, outline_material):
     links.new(sw_text.outputs["Output"], smooth_text.inputs[0])
 
     # Per-char 3-state attributes path
+    links.new(scene_time.outputs["Frame"], effective_frame.inputs[0])
+    links.new(group_in.outputs[SOCKET_FRAME_OFFSET], effective_frame.inputs[1])
+
     links.new(group_in.outputs[SOCKET_CHAR_FRAME_IN], enter_start.inputs[0])
     links.new(group_in.outputs[SOCKET_CHAR_FRAME_IN], enter_end.inputs[0])
     links.new(group_in.outputs[SOCKET_TRANSITION_FRAMES], enter_end.inputs[1])
-    links.new(scene_time.outputs["Frame"], _enabled_input(map_enter, "Value"))
+    links.new(effective_frame.outputs[0], _enabled_input(map_enter, "Value"))
     links.new(enter_start.outputs[0], _enabled_input(map_enter, "From Min"))
     links.new(enter_end.outputs[0], _enabled_input(map_enter, "From Max"))
     links.new(group_in.outputs[SOCKET_PER_CHAR_MATERIAL], _enabled_input(sw_enter, "Switch"))
@@ -331,7 +345,7 @@ def _build_lyric_solidify_tree(node_group, outline_material):
     links.new(group_in.outputs[SOCKET_CHAR_FRAME_OUT], exit_start.inputs[0])
     links.new(group_in.outputs[SOCKET_CHAR_FRAME_OUT], exit_end.inputs[0])
     links.new(group_in.outputs[SOCKET_TRANSITION_FRAMES], exit_end.inputs[1])
-    links.new(scene_time.outputs["Frame"], _enabled_input(map_exit, "Value"))
+    links.new(effective_frame.outputs[0], _enabled_input(map_exit, "Value"))
     links.new(exit_start.outputs[0], _enabled_input(map_exit, "From Min"))
     links.new(exit_end.outputs[0], _enabled_input(map_exit, "From Max"))
     links.new(group_in.outputs[SOCKET_PER_CHAR_MATERIAL], _enabled_input(sw_exit, "Switch"))
@@ -388,6 +402,7 @@ def get_or_create_lyric_solidify_node_group(outline_material=None, reset=False):
         node_group is None
         or reset
         or _interface_socket_by_name(node_group, SOCKET_PER_CHAR_MATERIAL) is None
+        or _interface_socket_by_name(node_group, SOCKET_FRAME_OFFSET) is None
     )
     if node_group is None:
         node_group = bpy.data.node_groups.new(
@@ -430,6 +445,7 @@ def set_lyric_solidify_inputs(
     char_frame_in=None,
     char_frame_out=None,
     transition_frames=None,
+    frame_offset=None,
 ):
     """Update per-object lyc_solidify modifier inputs by interface socket name."""
     node_group = getattr(mod, "node_group", None)
@@ -441,6 +457,7 @@ def set_lyric_solidify_inputs(
         (SOCKET_CHAR_FRAME_IN, None if char_frame_in is None else float(char_frame_in)),
         (SOCKET_CHAR_FRAME_OUT, None if char_frame_out is None else float(char_frame_out)),
         (SOCKET_TRANSITION_FRAMES, None if transition_frames is None else float(transition_frames)),
+        (SOCKET_FRAME_OFFSET, None if frame_offset is None else float(frame_offset)),
     )
     for socket_name, value in mapping:
         if value is None:
@@ -450,15 +467,37 @@ def set_lyric_solidify_inputs(
             _set_modifier_input(mod, sock.identifier, value)
 
 
+def set_lyric_solidify_socket_default(socket_name, value):
+    """Update the default value of a named input socket on the tagged lyc_solidify group."""
+    node_group = next(
+        (
+            ng
+            for ng in bpy.data.node_groups
+            if ng.type == "GEOMETRY"
+            and ng.get(PV_TAG, False)
+            and ng.name.startswith(LYRIC_SOLIDIFY_GROUP_NAME)
+        ),
+        None,
+    )
+    if node_group is None:
+        return False
+    sock = _interface_socket_by_name(node_group, socket_name)
+    if sock is None:
+        return False
+    sock.default_value = value
+    return True
+
+
 def attach_lyric_solidify_modifier(
     obj,
     node_group,
     outline_material=None,
     *,
     per_char_enabled=True,
-    char_frame_in=1.0,
-    char_frame_out=2.0,
+    char_frame_in=0.0,
+    char_frame_out=1.0,
     transition_frames=DEFAULT_TRANSITION_FRAMES,
+    frame_offset=DEFAULT_FRAME_OFFSET,
 ):
     """Attach the lyc_solidify Geometry Nodes modifier and configure per-char parameters."""
     mod = obj.modifiers.get(LYRIC_SOLIDIFY_GROUP_NAME)
@@ -472,5 +511,6 @@ def attach_lyric_solidify_modifier(
         char_frame_in=char_frame_in,
         char_frame_out=char_frame_out,
         transition_frames=transition_frames,
+        frame_offset=frame_offset,
     )
     return mod

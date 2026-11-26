@@ -5,13 +5,66 @@ import math
 from ..core.layout import get_random_amount
 
 
+def iter_action_fcurves(action):
+    """Yield F-Curves from a Blender action across Blender 5.x layered and legacy APIs."""
+    if action is None:
+        return
+    seen = set()
+    layers = getattr(action, "layers", None)
+    if layers:
+        for layer in layers:
+            for strip in getattr(layer, "strips", ()):
+                for channelbag in getattr(strip, "channelbags", ()):
+                    for fc in getattr(channelbag, "fcurves", ()):
+                        fc_id = id(fc)
+                        if fc_id not in seen:
+                            seen.add(fc_id)
+                            yield fc
+    if not seen:
+        for fc in getattr(action, "fcurves", ()):
+            fc_id = id(fc)
+            if fc_id not in seen:
+                seen.add(fc_id)
+                yield fc
+
+
+def shift_action_keyframes(obj, delta_frames, seen_actions=None):
+    """Shift all keyframes and Bezier handles of an object's action along the timeline."""
+    delta = float(delta_frames)
+    if abs(delta) < 1e-9:
+        return False
+    action = getattr(getattr(obj, "animation_data", None), "action", None)
+    if action is None:
+        return False
+    if seen_actions is not None:
+        action_key = action.as_pointer() if hasattr(action, "as_pointer") else id(action)
+        if action_key in seen_actions:
+            return False
+        seen_actions.add(action_key)
+    shifted = False
+    for fc in iter_action_fcurves(action):
+        for kp in getattr(fc, "keyframe_points", ()):
+            kp.co.x += delta
+            if hasattr(kp, "handle_left"):
+                kp.handle_left.x += delta
+            if hasattr(kp, "handle_right"):
+                kp.handle_right.x += delta
+            shifted = True
+        if hasattr(fc, "update"):
+            try:
+                fc.update()
+            except (AttributeError, RuntimeError):
+                pass
+    return shifted
+
+
 def smooth_action_fcurves(obj, interpolation="BEZIER", handle_type="AUTO_CLAMPED"):
     """将物体当前动画动作的所有关键帧曲线统一设置为指定插值与手柄类型，防止过冲。"""
     action = getattr(getattr(obj, "animation_data", None), "action", None)
     if not action:
         return
     try:
-        for fc in action.fcurves:
+        for fc in iter_action_fcurves(action):
             for key in fc.keyframe_points:
                 if getattr(fc, "data_path", "") in {"hide_render", "hide_viewport"}:
                     key.interpolation = "CONSTANT"
@@ -68,7 +121,7 @@ def key_glyph_reveal(obj, frame_in, pop_y=0.0, pop_z=0.0, pop_frames=4):
     action = getattr(getattr(obj, "animation_data", None), "action", None)
     if action:
         try:
-            for curve in action.fcurves:
+            for curve in iter_action_fcurves(action):
                 if curve.data_path in {"hide_render", "hide_viewport"}:
                     for key in curve.keyframe_points:
                         key.interpolation = "CONSTANT"
