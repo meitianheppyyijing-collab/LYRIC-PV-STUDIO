@@ -302,6 +302,28 @@ class TestLyricDocumentCache(unittest.TestCase):
         self.assertEqual(timeline[2].sing_end_frame, 121)
         self.assertEqual(timeline[2].frame_out, 129)
 
+    def test_even_per_char_timeline_for_lrc_and_srt(self):
+        # LRC: 4 characters over 1.0s..3.0s at 24fps (frames 25..73, span 48 -> 12 frames each).
+        lrc_doc = LyricDocument.from_lrc_entries([(1.0, "你好世界"), (3.0, "尾声")])
+        lrc_tl = lrc_doc.get_timeline(fps=24.0, start_frame=1, time_offset=0.0, hold_gap=3.0, fade_frames=8)
+        self.assertEqual(len(lrc_tl[0].unit_frames), 4)
+        self.assertEqual(
+            [(u.frame_in, u.frame_out) for u in lrc_tl[0].unit_frames],
+            [(25, 37), (37, 49), (49, 61), (61, 73)],
+        )
+
+        # SRT: spaces & newlines do not consume singing time; visible units divide [frame_in, sing_end_frame].
+        cues = parse_srt_text(
+            "1\n00:00:01,000 --> 00:00:03,000\nHi 世\n界\n"
+        )
+        srt_doc = LyricDocument.from_srt_entries(cues)
+        srt_tl = srt_doc.get_timeline(fps=24.0, start_frame=1, time_offset=0.0, hold_gap=3.0, fade_frames=8)
+        # Units: ["Hi", " ", "世", "\n", "界"] -> 3 visible units dividing frames 25..73 (16 frames each).
+        self.assertEqual(len(srt_tl[0].unit_frames), 5)
+        self.assertEqual((srt_tl[0].unit_frames[0].frame_in, srt_tl[0].unit_frames[0].frame_out), (25, 41))
+        self.assertEqual((srt_tl[0].unit_frames[2].frame_in, srt_tl[0].unit_frames[2].frame_out), (41, 57))
+        self.assertEqual((srt_tl[0].unit_frames[4].frame_in, srt_tl[0].unit_frames[4].frame_out), (57, 73))
+
 
 if __name__ == "__main__":
     unittest.main()

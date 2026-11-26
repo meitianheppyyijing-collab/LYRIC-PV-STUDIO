@@ -4,6 +4,15 @@ import bpy
 from mathutils import Matrix
 
 from ..animation.runtime import update_lyric_entrance_positions
+from ..blender.geometry_nodes import (
+    LYRIC_SOLIDIFY_GROUP_NAME,
+    set_lyric_solidify_inputs,
+)
+from ..blender.materials import (
+    TEXT_MATERIAL_NAME,
+    sync_three_state_material_groups,
+    update_stage_group_basic_params,
+)
 from ..constants import PV_ROOT_NAME, PV_TAG
 from ..core.spatial import camera_frame_bounds, get_occlusion_safe_distance
 
@@ -119,3 +128,52 @@ def update_lyric_entrance_settings(self, context):
     """Notify active scene to re-evaluate entrance positions."""
     scene = context.scene if context else bpy.context.scene
     update_lyric_entrance_positions(scene)
+
+
+def update_lyric_per_char_material(self, context):
+    """Sync the UI per-char material toggle and transition frames to all lyc_solidify modifiers."""
+    collection = bpy.data.collections.get(PV_ROOT_NAME)
+    if collection is None:
+        return
+    enabled = bool(self.per_char_material_enabled)
+    transition = max(0.0, float(self.material_transition_frames))
+    for obj in collection.all_objects:
+        if not obj.get(PV_TAG, False) or obj.type != "FONT":
+            continue
+        mod = obj.modifiers.get(LYRIC_SOLIDIFY_GROUP_NAME)
+        if mod is not None and mod.type == "NODES":
+            set_lyric_solidify_inputs(
+                mod,
+                per_char_enabled=enabled,
+                transition_frames=transition,
+            )
+            obj.update_tag()
+
+
+def update_lyric_stage_shaders(self, context):
+    """Live-sync user-selected before/singing/after shader groups into LPV_Text_Material."""
+    mat = next(
+        (
+            item
+            for item in bpy.data.materials
+            if item.get(PV_TAG, False) and item.name.startswith(TEXT_MATERIAL_NAME)
+        ),
+        None,
+    )
+    if mat is None:
+        return
+    sync_three_state_material_groups(
+        mat,
+        self.shader_group_before,
+        self.shader_group_singing,
+        self.shader_group_after,
+    )
+
+
+def update_lyric_after_appearance(self, context):
+    """Update default RGB/Emission Strength on the after shader group when tweaked in sidebar."""
+    update_stage_group_basic_params(
+        self.shader_group_after,
+        color=self.text_color,
+        glow_strength=self.glow_strength,
+    )

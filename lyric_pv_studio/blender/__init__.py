@@ -15,22 +15,40 @@ from .collections import (
 from .geometry_nodes import (
     attach_lyric_solidify_modifier,
     get_or_create_lyric_solidify_node_group,
+    set_lyric_solidify_inputs,
 )
 from .materials import (
+    DEFAULT_AFTER_COLOR,
+    DEFAULT_BEFORE_COLOR,
     DEFAULT_OUTLINE_COLOR,
+    DEFAULT_SINGING_COLOR,
     DEFAULT_TEXT_COLOR,
+    ensure_stage_shader_groups,
+    get_or_create_stage_shader_group,
     make_outline_material,
     make_text_material,
+    make_three_state_text_material,
+    sync_three_state_material_groups,
+    update_stage_group_basic_params,
 )
 
 __all__ = [
+    "DEFAULT_BEFORE_COLOR",
+    "DEFAULT_SINGING_COLOR",
     "DEFAULT_TEXT_COLOR",
+    "DEFAULT_AFTER_COLOR",
     "DEFAULT_OUTLINE_COLOR",
     "get_or_create_collection",
     "remove_generated_collection",
     "remove_legacy_generated_background",
     "get_or_create_lyric_solidify_node_group",
     "attach_lyric_solidify_modifier",
+    "set_lyric_solidify_inputs",
+    "get_or_create_stage_shader_group",
+    "ensure_stage_shader_groups",
+    "make_three_state_text_material",
+    "sync_three_state_material_groups",
+    "update_stage_group_basic_params",
     "make_text_material",
     "make_outline_material",
 ]

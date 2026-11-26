@@ -492,27 +492,52 @@ class LyricDocument:
                 sing_end_frame = frame_out
 
             effective_fade = min(fade_req, max(0, (frame_out - frame_in) // 2))
+            clamped_sing_end = min(sing_end_frame, frame_out)
 
-            unit_frames = ()
+            computed_units = []
             if line.has_word_timing:
-                computed_units = []
+                last_end = frame_in
                 for unit in line.units:
                     if unit.is_timed:
                         u_start_sec = max(0.0, unit.start_ms / 1000.0 + offset)
                         u_end_sec = max(u_start_sec, unit.end_ms / 1000.0 + offset)
                         u_in = max(frame_in, min(frame_out - 1, base_frame + round(u_start_sec * safe_fps)))
                         u_out = max(u_in + 1, min(frame_out, base_frame + round(u_end_sec * safe_fps)))
+                        last_end = u_out
                     else:
-                        u_in = frame_in
-                        u_out = min(frame_out, frame_in + 1)
+                        u_in = max(frame_in, min(frame_out - 1, last_end))
+                        u_out = max(u_in + 1, min(frame_out, u_in + 1))
                     computed_units.append(UnitFrameTiming(frame_in=u_in, frame_out=u_out))
-                unit_frames = tuple(computed_units)
+            elif line.units:
+                span_end = max(frame_in + 1, clamped_sing_end)
+                visible_indices = [ui for ui, u in enumerate(line.units) if not u.is_space]
+                visible_map = {}
+                if visible_indices:
+                    total_visible = len(visible_indices)
+                    span = max(1, span_end - frame_in)
+                    for rank, ui in enumerate(visible_indices):
+                        raw_in = frame_in + round(span * rank / total_visible)
+                        raw_out = frame_in + round(span * (rank + 1) / total_visible)
+                        u_in = max(frame_in, min(span_end - 1, raw_in))
+                        u_out = max(u_in + 1, min(frame_out, raw_out))
+                        visible_map[ui] = UnitFrameTiming(frame_in=u_in, frame_out=u_out)
+                last_end = frame_in
+                for ui in range(len(line.units)):
+                    if ui in visible_map:
+                        timing_u = visible_map[ui]
+                        last_end = timing_u.frame_out
+                        computed_units.append(timing_u)
+                    else:
+                        u_in = max(frame_in, min(frame_out - 1, last_end))
+                        u_out = max(u_in + 1, min(frame_out, u_in + 1))
+                        computed_units.append(UnitFrameTiming(frame_in=u_in, frame_out=u_out))
+            unit_frames = tuple(computed_units)
 
             timings.append(
                 LineFrameTiming(
                     frame_in=frame_in,
                     frame_out=frame_out,
-                    sing_end_frame=min(sing_end_frame, frame_out),
+                    sing_end_frame=clamped_sing_end,
                     fade_frames=effective_fade,
                     unit_frames=unit_frames,
                 )

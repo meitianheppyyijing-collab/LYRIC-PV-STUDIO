@@ -13,11 +13,18 @@ from bpy.props import (
 from bpy.types import PropertyGroup
 
 from .callbacks import (
+    update_lyric_after_appearance,
     update_lyric_entrance_settings,
     update_lyric_font_size,
+    update_lyric_per_char_material,
     update_lyric_positions,
+    update_lyric_stage_shaders,
     update_lyric_viewport_visibility,
 )
+
+
+def _is_shader_node_tree(self, node_tree):
+    return node_tree is not None and getattr(node_tree, "type", None) == "SHADER"
 
 
 class LYRICPV_Properties(PropertyGroup):
@@ -104,11 +111,12 @@ class LYRICPV_Properties(PropertyGroup):
     )
     glow_strength: FloatProperty(
         name="文字柔光强度",
-        description="仅控制插件生成的歌词材质发光，不修改场景合成器",
+        description="控制唱后默认着色器节点组的发光强度，不修改场景合成器",
         default=0.35,
         min=0.0,
         max=8.0,
         precision=2,
+        update=update_lyric_after_appearance,
     )
     text_extrude: FloatProperty(
         name="文字立体厚度",
@@ -208,6 +216,43 @@ class LYRICPV_Properties(PropertyGroup):
         min=0.0,
         max=1.0,
         default=(1.0, 0.503542, 0.162092, 1.0),
+        update=update_lyric_after_appearance,
+    )
+    per_char_material_enabled: BoolProperty(
+        name="逐字材质切换",
+        description="对应几何节点 lyc_solidify 的逐字开关：开启时按逐字时间切换唱前/唱中/唱后材质（无逐字时间时按句均分）；关闭时全部使用唱后材质",
+        default=True,
+        update=update_lyric_per_char_material,
+    )
+    material_transition_frames: FloatProperty(
+        name="材质过渡帧数",
+        description="唱前→唱中→唱后材质平滑混合的过渡帧数；0 为瞬间切换",
+        default=2.0,
+        min=0.0,
+        max=30.0,
+        precision=1,
+        update=update_lyric_per_char_material,
+    )
+    shader_group_before: PointerProperty(
+        name="唱前材质组",
+        description="唱前状态的着色器节点组（默认 LPV_Shader_Before）；重新生成与重抽排版不会覆盖自定义修改",
+        type=bpy.types.NodeTree,
+        poll=_is_shader_node_tree,
+        update=update_lyric_stage_shaders,
+    )
+    shader_group_singing: PointerProperty(
+        name="唱中材质组",
+        description="唱中状态的着色器节点组（默认 LPV_Shader_Singing）；重新生成与重抽排版不会覆盖自定义修改",
+        type=bpy.types.NodeTree,
+        poll=_is_shader_node_tree,
+        update=update_lyric_stage_shaders,
+    )
+    shader_group_after: PointerProperty(
+        name="唱后材质组",
+        description="唱后状态的着色器节点组（默认 LPV_Shader_After）；关闭逐字材质切换时全部使用此材质",
+        type=bpy.types.NodeTree,
+        poll=_is_shader_node_tree,
+        update=update_lyric_stage_shaders,
     )
     random_seed: IntProperty(
         name="随机种子",
