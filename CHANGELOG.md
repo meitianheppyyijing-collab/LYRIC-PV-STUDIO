@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.1 — Three-state per-char materials, lyc_solidify & live frame offset
 
 ### 新增与优化
 - 歌词时间轴基准与实时帧偏移重构：

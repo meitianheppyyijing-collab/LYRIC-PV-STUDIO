@@ -26,7 +26,7 @@ LYRIC PV STUDIO 插件根入口模块：
 bl_info = {
     "name": "LYRIC PV STUDIO",
     "author": "OpenAI",
-    "version": (0, 6, 0),
+    "version": (0, 6, 1),
     "blender": (5, 2, 0),
     "location": "View3D > Sidebar > Lyric PV",
     "description": "Create animated lyric typography, per-character motion and text effects from LRC, YRC and SRT files",
