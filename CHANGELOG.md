@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### 新增与优化
+- 新增「唱前 / 唱中 / 唱后」三态逐字材质系统与全样式逐字支持：
+  - 主材质 `LPV_Text_Material` 采用 1 个主混合材质 + 3 个可独立编辑的着色器节点组（`LPV_Shader_Before`、`LPV_Shader_Singing`、`LPV_Shader_After`），通过 `lpv_entered` / `lpv_finished` 几何属性平滑混合；重新生成与重抽排版不再覆盖用户自定义修改的着色器节点，并提供「初始化 / 重置默认三态材质」按钮与侧边栏节点组选择器。
+  - 几何节点 `lyc_solidify` 新增 `Per-Char Material`（逐字开关，关闭即全部输出唱后材质）、`Char Frame In`、`Char Frame Out` 与 `Transition Frames` 接口，结合 `Scene Time` 实时计算每字权重并写入网格属性。
+  - 所有排版样式（含竖排、斜排、宽字距及格式化 SRT）统一生成逐字数据对象，均附带完整逐字时间与几何节点参数；对无逐字时间的 LRC / SRT 自动按该句时长均分各可见字单元的时间，并通过 UI「逐字材质切换」开关实时同步几何节点开关。
 - 更新默认歌词材质与默认几何节点配置：
   - 主歌词材质（`LPV_Text_Material`）升级为 `RGB -> Reroute -> Principled BSDF (Base Color + Emission Color, Roughness=0.5)` 节点结构，默认字幕颜色调整为暖橙色 `(1.0, 0.504, 0.162)`。
   - 新增无影自发光描边材质（`LPV_Text_Outline`，通过 `Light Path.Is Shadow Ray` 混合 `Emission` 与 `Transparent BSDF`）以及默认 `lyc_solidify` 几何节点组（提供 `Text Depth=0.02`、`Outline Thickness=0.0055`、`Z Offset=-0.0015`、`Outline Material` 接口），生成文字对象时自动挂载，并在清理时同步回收孤立的带标记节点组。

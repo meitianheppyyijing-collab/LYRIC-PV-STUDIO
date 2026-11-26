@@ -13,6 +13,7 @@ from .operators import (
     LYRICPV_OT_import_lyric,
     LYRICPV_OT_reroll_all,
     LYRICPV_OT_reroll_one,
+    LYRICPV_OT_reset_materials,
     LYRICPV_OT_toggle_lock,
 )
 from .panels import LYRICPV_PT_main
@@ -25,6 +26,7 @@ CLASSES = (
     LYRICPV_OT_reroll_all,
     LYRICPV_OT_reroll_one,
     LYRICPV_OT_toggle_lock,
+    LYRICPV_OT_reset_materials,
     LYRICPV_OT_clear,
     LYRICPV_PT_main,
 )
@@ -37,6 +39,7 @@ __all__ = [
     "LYRICPV_OT_reroll_all",
     "LYRICPV_OT_reroll_one",
     "LYRICPV_OT_toggle_lock",
+    "LYRICPV_OT_reset_materials",
     "LYRICPV_OT_clear",
     "LYRICPV_PT_main",
 ]

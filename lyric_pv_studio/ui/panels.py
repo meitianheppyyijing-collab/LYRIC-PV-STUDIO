@@ -72,6 +72,17 @@ class LYRICPV_PT_main(Panel):
             layout.prop(props, "chorus_y_offset")
         layout.prop(props, "text_color")
 
+        mat_box = layout.box()
+        mat_box.label(text="三态逐字材质（唱前 / 唱中 / 唱后）")
+        mat_box.prop(props, "per_char_material_enabled", toggle=True)
+        if doc is not None and not doc.is_yrc:
+            mat_box.label(text="无逐字时间：开启按句均分，关闭用唱后材质")
+        mat_box.prop(props, "material_transition_frames")
+        mat_box.prop(props, "shader_group_before")
+        mat_box.prop(props, "shader_group_singing")
+        mat_box.prop(props, "shader_group_after")
+        mat_box.operator("lyric_pv.reset_materials", text="初始化 / 重置默认三态材质", icon="MATERIAL")
+
         layout.separator()
         layout.label(text="时间与动画")
         layout.prop(props, "camera_distance")

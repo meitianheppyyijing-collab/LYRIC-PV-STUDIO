@@ -53,18 +53,19 @@ def _clean_tagged_collection_tree(collection):
     return not collection.objects and not collection.children
 
 
-def remove_generated_collection():
-    """Remove all generated text objects, collections, and orphan materials."""
+def remove_generated_collection(purge_resources=True):
+    """Remove generated text objects/collections; optionally purge orphan tagged materials/node groups."""
     collection = bpy.data.collections.get(PV_ROOT_NAME)
     if collection is None or not collection.get(PV_TAG, False):
         return False
     _clean_tagged_collection_tree(collection)
-    for mat in list(bpy.data.materials):
-        if mat.get(PV_TAG, False) and mat.users == 0:
-            bpy.data.materials.remove(mat)
-    for ng in list(bpy.data.node_groups):
-        if ng.get(PV_TAG, False) and ng.users == 0:
-            bpy.data.node_groups.remove(ng)
+    if purge_resources:
+        for mat in list(bpy.data.materials):
+            if mat.get(PV_TAG, False) and mat.users == 0:
+                bpy.data.materials.remove(mat)
+        for ng in list(bpy.data.node_groups):
+            if ng.get(PV_TAG, False) and ng.users == 0:
+                bpy.data.node_groups.remove(ng)
     if not collection.objects and not collection.children:
         bpy.data.collections.remove(collection)
     invalidate_entrance_cache()
