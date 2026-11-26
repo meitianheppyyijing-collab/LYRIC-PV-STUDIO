@@ -3,10 +3,13 @@
 import bpy
 from mathutils import Matrix
 
-from ..animation.runtime import update_lyric_entrance_positions
+from ..animation.keyframing import shift_action_keyframes
+from ..animation.runtime import invalidate_entrance_cache, update_lyric_entrance_positions
 from ..blender.geometry_nodes import (
     LYRIC_SOLIDIFY_GROUP_NAME,
+    SOCKET_FRAME_OFFSET,
     set_lyric_solidify_inputs,
+    set_lyric_solidify_socket_default,
 )
 from ..blender.materials import (
     TEXT_MATERIAL_NAME,
@@ -148,6 +151,42 @@ def update_lyric_per_char_material(self, context):
                 transition_frames=transition,
             )
             obj.update_tag()
+
+
+def update_lyric_frame_offset(self, context):
+    """Live-sync the UI frame offset to lyc_solidify group inputs, keyframes, and entrance motion."""
+    scene = context.scene if context else bpy.context.scene
+    new_offset = int(self.frame_offset)
+    set_lyric_solidify_socket_default(SOCKET_FRAME_OFFSET, float(new_offset))
+
+    collection = bpy.data.collections.get(PV_ROOT_NAME)
+    if collection is not None:
+        seen_actions = set()
+        for obj in collection.all_objects:
+            if not obj.get(PV_TAG, False):
+                continue
+            touched = False
+            if obj.type == "FONT":
+                mod = obj.modifiers.get(LYRIC_SOLIDIFY_GROUP_NAME)
+                if mod is not None and mod.type == "NODES":
+                    set_lyric_solidify_inputs(mod, frame_offset=new_offset)
+                    touched = True
+            if getattr(getattr(obj, "animation_data", None), "action", None) is not None:
+                old_offset = int(obj.get("lyric_applied_frame_offset", 0))
+                delta = new_offset - old_offset
+                if delta != 0:
+                    shift_action_keyframes(obj, delta, seen_actions=seen_actions)
+                    obj["lyric_applied_frame_offset"] = new_offset
+                    touched = True
+            if touched:
+                obj.update_tag()
+
+    invalidate_entrance_cache()
+    if scene is not None:
+        try:
+            scene.frame_set(scene.frame_current, subframe=scene.frame_subframe)
+        except Exception:
+            update_lyric_entrance_positions(scene)
 
 
 def update_lyric_stage_shaders(self, context):

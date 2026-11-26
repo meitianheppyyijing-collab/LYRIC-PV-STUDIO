@@ -100,25 +100,26 @@ def update_lyric_entrance_positions(scene):
         local_frame_height = frame_height / controller_scale
         slide_frames = max(1, int(props.slide_frames))
         distance_factor = max(1.0, float(props.entrance_distance))
-        current_frame = int(scene.frame_current)
+        frame_offset = int(getattr(props, "frame_offset", 0))
+        logical_frame = int(scene.frame_current) - frame_offset
         index = _ENTRANCE_CACHE.get(cache_key)
-        if index is None or current_frame != index["frame"] + 1:
-            index = _build_entrance_index(scene, collection, cache_key, current_frame)
+        if index is None or logical_frame != index["frame"] + 1:
+            index = _build_entrance_index(scene, collection, cache_key, logical_frame)
         else:
             # Sequential playback/render: process only events at this frame.
-            added, removed = index["events"].get(current_frame, ((), ()))
+            added, removed = index["events"].get(logical_frame, ((), ()))
             index["active"].difference_update(removed)
             index["active"].update(added)
-            index["frame"] = current_frame
+            index["frame"] = logical_frame
         for obj in index["active"]:
             try:
-                frame_in = float(obj.get("lyric_frame_in", 1.0))
+                frame_in = float(obj.get("lyric_frame_in", 0.0))
                 frame_out = float(obj.get("lyric_frame_out", frame_in + slide_frames + 1.0))
                 fade_frames = int(obj.get("lyric_fade_frames", 0))
                 direction = str(obj.get("lyric_entrance_direction", "LEFT"))
                 line_limit = max(1, int(frame_out - frame_in - fade_frames))
                 effective_slide = min(slide_frames, line_limit)
-                elapsed = current_frame - frame_in
+                elapsed = logical_frame - frame_in
                 t = max(0.0, min(1.0, elapsed / effective_slide))
                 eased = 1.0 - (1.0 - t) ** 3
                 if direction == "NONE":
@@ -131,8 +132,8 @@ def update_lyric_entrance_positions(scene):
                     start_offset = (0.0, local_frame_height * distance_factor, 0.0)
                 else:
                     start_offset = (0.0, -local_frame_height * distance_factor, 0.0)
-                if fade_frames > 0 and current_frame > frame_out - fade_frames:
-                    exit_t = max(0.0, min(1.0, (current_frame - (frame_out - fade_frames)) / max(1, fade_frames)))
+                if fade_frames > 0 and logical_frame > frame_out - fade_frames:
+                    exit_t = max(0.0, min(1.0, (logical_frame - (frame_out - fade_frames)) / max(1, fade_frames)))
                     exit_eased = exit_t * exit_t * (3.0 - 2.0 * exit_t)
                     motion_x = -start_offset[0] * exit_eased
                     motion_y = -start_offset[1] * exit_eased
@@ -144,7 +145,7 @@ def update_lyric_entrance_positions(scene):
                 base_z = float(obj.get("lyric_base_z", 0.0))
                 pop_enabled = bool(obj.get("lyric_pop_enabled", False))
                 pop_frames = max(1, int(obj.get("lyric_pop_frames", 4)))
-                pop_t = max(0.0, min(1.0, (current_frame - frame_in) / pop_frames)) if pop_enabled else 1.0
+                pop_t = max(0.0, min(1.0, (logical_frame - frame_in) / pop_frames)) if pop_enabled else 1.0
                 pop_eased = 1.0 - (1.0 - pop_t) ** 3
                 pop_y = float(obj.get("lyric_pop_y", 0.0)) * (1.0 - pop_eased)
                 pop_z = float(obj.get("lyric_pop_z", 0.0)) * (1.0 - pop_eased)

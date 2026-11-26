@@ -169,6 +169,71 @@ class TestAnimation(unittest.TestCase):
             self.assertEqual(kp.handle_left_type, "AUTO_CLAMPED")
             self.assertEqual(kp.handle_right_type, "AUTO_CLAMPED")
 
+    def test_shift_action_keyframes_layered_and_legacy(self):
+        from lyric_pv_studio.animation.keyframing import shift_action_keyframes
+
+        class Vec2:
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+        class KeyPoint:
+            def __init__(self, x, y=1.0):
+                self.co = Vec2(x, y)
+                self.handle_left = Vec2(x - 1.0, y)
+                self.handle_right = Vec2(x + 1.0, y)
+
+        class FCurve:
+            def __init__(self, xs):
+                self.keyframe_points = [KeyPoint(x) for x in xs]
+                self.updated = 0
+
+            def update(self):
+                self.updated += 1
+
+        class ChannelBag:
+            def __init__(self, fcurves):
+                self.fcurves = fcurves
+
+        class Strip:
+            def __init__(self, channelbags):
+                self.channelbags = channelbags
+
+        class Layer:
+            def __init__(self, strips):
+                self.strips = strips
+
+        class LayeredAction:
+            def __init__(self, fcurves):
+                self.layers = [Layer([Strip([ChannelBag(fcurves)])])]
+                self.fcurves = []
+
+        class AnimData:
+            def __init__(self, action):
+                self.action = action
+
+        class DummyObj:
+            def __init__(self, action):
+                self.animation_data = AnimData(action)
+
+        fc = FCurve([24.0, 72.0])
+        action = LayeredAction([fc])
+        obj_a = DummyObj(action)
+        obj_b = DummyObj(action)
+
+        seen = set()
+        self.assertTrue(shift_action_keyframes(obj_a, 15, seen_actions=seen))
+        # Shared action should not be shifted twice in the same pass.
+        self.assertFalse(shift_action_keyframes(obj_b, 15, seen_actions=seen))
+        self.assertEqual([kp.co.x for kp in fc.keyframe_points], [39.0, 87.0])
+        self.assertEqual([kp.handle_left.x for kp in fc.keyframe_points], [38.0, 86.0])
+        self.assertEqual([kp.handle_right.x for kp in fc.keyframe_points], [40.0, 88.0])
+        self.assertEqual(fc.updated, 1)
+
+        # Negative shift moves cleanly back, including into negative frames without clamping.
+        self.assertTrue(shift_action_keyframes(obj_a, -50))
+        self.assertEqual([kp.co.x for kp in fc.keyframe_points], [-11.0, 37.0])
+
 
 class TestLyricDocumentCache(unittest.TestCase):
     def setUp(self):
@@ -228,6 +293,23 @@ class TestLyricDocumentCache(unittest.TestCase):
         self.assertEqual(t_shifted[0].frame_in, 25 + 48)
         self.assertEqual(t_shifted[0].unit_frames[0].frame_in, 25 + 48)
         self.assertEqual(t_shifted[0].unit_frames[1].frame_in, 49 + 48)
+
+        # Default start_frame=0 anchors at Blender frame 0; frame_offset shifts linearly (including negative).
+        t_zero = doc.get_timeline(fps=24.0, hold_gap=3.0, fade_frames=8)
+        self.assertEqual(t_zero[0].frame_in, 24)
+        self.assertEqual(t_zero[0].sing_end_frame, 72)
+        self.assertEqual(t_zero[0].frame_out, 80)
+        self.assertEqual(t_zero[0].unit_frames[0].frame_in, 24)
+        self.assertEqual(t_zero[0].unit_frames[1].frame_in, 48)
+
+        t_pos = doc.get_timeline(fps=24.0, start_frame=0, frame_offset=30, hold_gap=3.0, fade_frames=8)
+        self.assertEqual(t_pos[0].frame_in, 54)
+        self.assertEqual(t_pos[0].unit_frames[1].frame_in, 78)
+
+        t_neg = doc.get_timeline(fps=24.0, start_frame=0, frame_offset=-40, hold_gap=3.0, fade_frames=8)
+        self.assertEqual(t_neg[0].frame_in, -16)
+        self.assertEqual(t_neg[0].unit_frames[0].frame_in, -16)
+        self.assertEqual(t_neg[0].unit_frames[1].frame_in, 8)
 
     def test_scene_cache_revision_undo_and_legacy_fallback(self):
         scene = {}

@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### 新增与优化
+- 歌词时间轴基准与实时帧偏移重构：
+  - 歌词时间映射固定以 Blender 第 `0` 帧作为 `0.0` 秒起点，不再受时间线起始帧（`scene.frame_start`）影响。
+  - 将侧边栏「手动时间偏移（秒）」调整为「手动帧偏移（`frame_offset`，单位：帧）」，并在 `lyc_solidify` 几何节点组新增 `Frame Offset` 输入接口；调整帧偏移时实时同步所有文字对象的几何节点组输入、关键帧（含 Blender 5.2 分层 Action）及镜头外入场/退场动画，无需重新生成。
 - 新增「唱前 / 唱中 / 唱后」三态逐字材质系统与全样式逐字支持：
   - 主材质 `LPV_Text_Material` 采用 1 个主混合材质 + 3 个可独立编辑的着色器节点组（`LPV_Shader_Before`、`LPV_Shader_Singing`、`LPV_Shader_After`），通过 `lpv_entered` / `lpv_finished` 几何属性平滑混合；重新生成与重抽排版不再覆盖用户自定义修改的着色器节点，并提供「初始化 / 重置默认三态材质」按钮与侧边栏节点组选择器。
   - 几何节点 `lyc_solidify` 新增 `Per-Char Material`（逐字开关，关闭即全部输出唱后材质）、`Char Frame In`、`Char Frame Out` 与 `Transition Frames` 接口，结合 `Scene Time` 实时计算每字权重并写入网格属性。

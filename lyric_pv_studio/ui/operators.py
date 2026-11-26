@@ -16,8 +16,10 @@ from ..blender.collections import (
     remove_legacy_generated_background,
 )
 from ..blender.geometry_nodes import (
+    SOCKET_FRAME_OFFSET,
     attach_lyric_solidify_modifier,
     get_or_create_lyric_solidify_node_group,
+    set_lyric_solidify_socket_default,
 )
 from ..blender.materials import (
     make_outline_material,
@@ -188,7 +190,8 @@ class LYRICPV_OT_generate(Operator):
                 self.report({"WARNING"}, f"字体加载失败，改用默认字体：{exc}")
 
         fps = scene.render.fps / scene.render.fps_base
-        start_frame = scene.frame_start
+        frame_offset = int(props.frame_offset)
+        set_lyric_solidify_socket_default(SOCKET_FRAME_OFFSET, float(frame_offset))
         distance = get_occlusion_safe_distance(scene, camera, props)
         min_x, max_x, min_y, max_y = camera_frame_bounds(scene, camera, distance)
         frame_width, frame_height = max_x - min_x, max_y - min_y
@@ -206,10 +209,12 @@ class LYRICPV_OT_generate(Operator):
         if props.hide_lyrics_in_viewport:
             controller.hide_set(True, view_layer=context.view_layer)
 
+        # Always anchor base timeline frames at Blender frame 0; manual frame_offset
+        # is applied live via geometry-node group input, shifted keyframes, and runtime handler.
         timeline = doc.get_timeline(
             fps=fps,
-            start_frame=start_frame,
-            time_offset=props.time_offset,
+            start_frame=0,
+            frame_offset=0,
             hold_gap=props.hold_gap,
             fade_frames=props.fade_frames,
         )
@@ -340,6 +345,7 @@ class LYRICPV_OT_generate(Operator):
                     char_frame_in=char_frame_in,
                     char_frame_out=char_frame_out,
                     transition_frames=transition_frames,
+                    frame_offset=frame_offset,
                 )
                 ob[PV_TAG] = True
                 row_glyphs[-1].append((ob, 0.0, ci, 0.0, char_frame_in, char_frame_out))
@@ -457,7 +463,7 @@ class LYRICPV_OT_generate(Operator):
                             reveal_frame = min(int(c_in), stagger_frame)
                             key_glyph_reveal(
                                 ob,
-                                reveal_frame,
+                                reveal_frame + frame_offset,
                                 pop_y=-base_size * 0.22 if pop_motion else 0.0,
                                 pop_z=props.spatial_depth if pop_motion else 0.0,
                                 pop_frames=max(2, fade),
@@ -465,11 +471,12 @@ class LYRICPV_OT_generate(Operator):
                             apply_text_animation(
                                 ob,
                                 record,
-                                reveal_frame,
-                                frame_out,
+                                reveal_frame + frame_offset,
+                                frame_out + frame_offset,
                                 props,
                                 random.Random(int(props.random_seed) + index * 997 + ci),
                             )
+                            ob["lyric_applied_frame_offset"] = frame_offset
                         placed_glyphs.append((ob, bx, row_y, ci, width))
                         glyph_order += 1
                         created += 1
@@ -511,6 +518,7 @@ class LYRICPV_OT_generate(Operator):
             sentence_group["lyric_frame_in"] = int(frame_in)
             sentence_group["lyric_frame_out"] = int(frame_out)
             sentence_group["lyric_fade_frames"] = int(fade)
+            sentence_group["lyric_applied_frame_offset"] = frame_offset
             if kinetic_per_char:
                 sentence_group["lyric_pop_enabled"] = False
             else:
@@ -521,16 +529,18 @@ class LYRICPV_OT_generate(Operator):
                 apply_text_animation(
                     sentence_group,
                     record,
-                    frame_in,
-                    frame_out,
+                    frame_in + frame_offset,
+                    frame_out + frame_offset,
                     props,
                     random.Random(int(props.random_seed) + index * 997),
                 )
-            key_object_scale(sentence_group, frame_in, frame_out, fade, reveal_enabled)
+            key_object_scale(sentence_group, frame_in + frame_offset, frame_out + frame_offset, fade, reveal_enabled)
             for ob, bx, row_y, _ci, _width in placed_glyphs:
                 ob.location.x = bx
                 ob.location.y = row_y
             if props.glitch_enabled:
+                g_in = frame_in + frame_offset
+                g_out = frame_out + frame_offset
                 for suffix, color, sign in (("C", (0.1, 0.85, 1.0, 1.0), -1.0), ("M", (1.0, 0.12, 0.48, 1.0), 1.0)):
                     gc = bpy.data.curves.new(f"LPV_Glitch_{index+1:03d}_{suffix}_Curve", type="FONT")
                     gc.body = lyric
@@ -547,12 +557,13 @@ class LYRICPV_OT_generate(Operator):
                     go.scale = (0.001, 0.001, 0.001)
                     go[PV_TAG] = True
                     go["lyric_glitch_overlay"] = True
-                    go.keyframe_insert(data_path="scale", frame=max(frame_in - 1, scene.frame_start))
+                    go["lyric_applied_frame_offset"] = frame_offset
+                    go.keyframe_insert(data_path="scale", frame=g_in - 1)
                     go.scale = (line_fit, line_fit, line_fit)
-                    go.keyframe_insert(data_path="scale", frame=frame_in)
-                    go.keyframe_insert(data_path="scale", frame=min(frame_in + 2, frame_out))
+                    go.keyframe_insert(data_path="scale", frame=g_in)
+                    go.keyframe_insert(data_path="scale", frame=min(g_in + 2, g_out))
                     go.scale = (0.001, 0.001, 0.001)
-                    go.keyframe_insert(data_path="scale", frame=min(frame_in + 3, frame_out))
+                    go.keyframe_insert(data_path="scale", frame=min(g_in + 3, g_out))
                     created += 1
         props.generated_count = doc.line_count
         invalidate_entrance_cache()

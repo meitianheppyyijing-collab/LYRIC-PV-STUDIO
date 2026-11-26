@@ -98,7 +98,7 @@ class LYRICPV_PT_main(Panel):
         if props.glitch_enabled:
             layout.prop(props, "glitch_strength")
         layout.prop(props, "hold_gap")
-        layout.prop(props, "time_offset")
+        layout.prop(props, "frame_offset")
 
         layout.separator()
         layout.label(text="视口显示")
